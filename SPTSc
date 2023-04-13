@@ -1,0 +1,37 @@
+getgenv().AutoFarm = false -- change to true to autofarm all except chakira or whatever its called
+getgenv().cAI = 1
+
+local function sendAction(action)
+    local RE = game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvent")
+    RE:FireServer({action})
+end
+
+local function performActions(actions)
+    for i = 1, #actions do
+        sendAction(actions[i])
+        coroutine.yield()
+    end
+end
+
+local actions = {"+FS1", "+BT1", "+MS1", "+JF1", "+FS2"}
+local co = coroutine.create(performActions)
+
+while getgenv().AutoFarm do
+    local cA = actions[getgenv().cAI]
+    sendAction(cA)
+    wait(0.5)
+    printconsole("cAI: " .. getgenv().cAI .. ", current action: " .. cA, 0, 255, 0)
+    local actionsStr = ""
+    for i = 1, #actions do
+        actionsStr = actionsStr .. actions[i]
+        if i < #actions then
+            actionsStr = actionsStr .. ", "
+        end
+    end
+    printconsole("A: " .. actionsStr, 0, 255, 0)
+    getgenv().cAI = getgenv().cAI + 1
+    if getgenv().cAI > #actions then
+        getgenv().cAI = 1
+    end
+    coroutine.resume(co, actions)
+end
