@@ -1,0 +1,15 @@
+
+while getgenv().Rewards do
+  if getgenv().Rewards == true then
+    local Rewards = game:GetService("ReplicatedStorage").Remotes.ServerEvent_GameManager
+   for i = 1, 12 do
+    local args = {
+    [1] = 27,
+    [2] = tostring(i)
+    }
+    
+    Rewards:FireServer(unpack(args))
+    wait()
+    end
+   end
+  end
