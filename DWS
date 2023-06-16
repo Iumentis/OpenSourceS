@@ -1,4 +1,4 @@
-
+getgenv().Rewards = false;
 while getgenv().Rewards do
   if getgenv().Rewards == true then
     local Rewards = game:GetService("ReplicatedStorage").Remotes.ServerEvent_GameManager
