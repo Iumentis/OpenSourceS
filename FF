@@ -1,0 +1,25 @@
+local Data = game:GetService("Players").LocalPlayer.Data
+
+local gamepasses = {
+    1725261,
+    1725663,
+    1725716,
+    1725839,
+    1726796,
+    1727798,
+    1727867,
+    1728792,
+    1846151,
+    2518588,
+    4611084,
+    7209942,
+    85970453,
+    87485295
+}
+
+for _, passID in ipairs(gamepasses) do
+    local stringValue = Instance.new("StringValue")
+    stringValue.Name = tostring(passID)
+    stringValue.Value = tostring(passID)
+    stringValue.Parent = Data
+end
