@@ -1,0 +1,533 @@
+_G.walkthroughwall = false;
+_G.infjump = false;
+_G.displaydestroy = false;
+_G.DFS = false;
+_G.gunesp = false;
+_G.coinesp = false;
+_G.innocentesp = false;
+_G.murdereresp = false;
+_G.sheriffesp = false
+_G.beachballesp = false;
+
+local userInputService = game:GetService("UserInputService")
+
+local function sheriffesp()
+    while wait(0.1) do
+        if _G.sheriffesp then
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer then
+                    local character = player.Character
+                    if character then
+                        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                        if humanoidRootPart then
+                            local boxAdornment = humanoidRootPart:FindFirstChild("sheriffesp")
+                            local backpack = player:FindFirstChild("Backpack")
+                            local hasGunInBackpack = backpack and backpack:FindFirstChild("Gun")
+                            local hasGunInCharacter = character:FindFirstChild("Gun")
+                            if (hasGunInBackpack or hasGunInCharacter) and not boxAdornment then
+                                boxAdornment = Instance.new("BoxHandleAdornment")
+                                boxAdornment.Name = "sheriffesp"
+                                boxAdornment.Adornee = humanoidRootPart
+                                boxAdornment.AlwaysOnTop = true
+                                boxAdornment.Size = humanoidRootPart.Size
+                                boxAdornment.Transparency = 0.3
+                                boxAdornment.Color3 = Color3.fromRGB(0, 0, 255)
+                                boxAdornment.Visible = true
+                                boxAdornment.Parent = humanoidRootPart
+                                boxAdornment.ZIndex = 1
+                            elseif not (hasGunInBackpack or hasGunInCharacter) and boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer then
+                    local character = player.Character
+                    if character then
+                        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                        if humanoidRootPart then
+                            local boxAdornment = humanoidRootPart:FindFirstChild("sheriffesp")
+                            if boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+local function murdereresp()
+    while wait(0.1) do
+        if _G.murdereresp then
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer then
+                    local character = player.Character
+                    if character then
+                        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                        if humanoidRootPart then
+                            local boxAdornment = humanoidRootPart:FindFirstChild("murdereresp")
+                            local backpack = player:FindFirstChild("Backpack")
+                            local hasKnifeInBackpack = backpack and backpack:FindFirstChild("Knife")
+                            local hasKnifeInCharacter = character:FindFirstChild("Knife")
+                            if (hasKnifeInBackpack or hasKnifeInCharacter) and not boxAdornment then
+                                boxAdornment = Instance.new("BoxHandleAdornment")
+                                boxAdornment.Name = "murdereresp"
+                                boxAdornment.Adornee = humanoidRootPart
+                                boxAdornment.AlwaysOnTop = true
+                                boxAdornment.Size = humanoidRootPart.Size
+                                boxAdornment.Transparency = 0.3
+                                boxAdornment.Color3 = Color3.fromRGB(255, 0, 0)
+                                boxAdornment.Visible = true
+                                boxAdornment.Parent = humanoidRootPart
+                                boxAdornment.ZIndex = 1
+                            elseif not (hasKnifeInBackpack or hasKnifeInCharacter) and boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer then
+                    local character = player.Character
+                    if character then
+                        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                        if humanoidRootPart then
+                            local boxAdornment = humanoidRootPart:FindFirstChild("murdereresp")
+                            if boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+local function innocentesp()
+    while wait(0.1) do
+        if _G.innocentesp then
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer then
+                    local character = player.Character
+                    if character then
+                        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                        if humanoidRootPart then
+                            local boxAdornment = humanoidRootPart:FindFirstChild("innocentesp")
+                            local backpack = player:FindFirstChild("Backpack")
+                            local hasKnifeInBackpack = backpack and backpack:FindFirstChild("Knife")
+                            local hasGunInBackpack = backpack and backpack:FindFirstChild("Gun")
+                            local hasKnifeInCharacter = character:FindFirstChild("Knife")
+                            local hasGunInCharacter = character:FindFirstChild("Gun")
+                            if not (hasKnifeInBackpack or hasGunInBackpack or hasKnifeInCharacter or hasGunInCharacter) and not boxAdornment then
+                                boxAdornment = Instance.new("BoxHandleAdornment")
+                                boxAdornment.Name = "innocentesp"
+                                boxAdornment.Adornee = humanoidRootPart
+                                boxAdornment.AlwaysOnTop = true
+                                boxAdornment.Size = humanoidRootPart.Size
+                                boxAdornment.Transparency = 0.3
+                                boxAdornment.Color3 = Color3.fromRGB(0, 255, 0)
+                                boxAdornment.Visible = true
+                                boxAdornment.Parent = humanoidRootPart
+                                boxAdornment.ZIndex = 1
+                            elseif (hasKnifeInBackpack or hasGunInBackpack or hasKnifeInCharacter or hasGunInCharacter) and boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer then
+                    local character = player.Character
+                    if character then
+                        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                        if humanoidRootPart then
+                            local boxAdornment = humanoidRootPart:FindFirstChild("innocentesp")
+                            if boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+
+
+local function beachballesp()
+    while wait(0.1) do
+        local normal = game.Workspace:FindFirstChild("Normal")
+        if normal then 
+            local coinContainer = normal:FindFirstChild("CoinContainer")
+            if coinContainer and _G.beachballesp then 
+                for _, coinServer in pairs(coinContainer:GetChildren()) do
+                    if coinServer.Name == "Coin_Server" then 
+                        local coinVisual = coinServer:FindFirstChild("CoinVisual") -- Fixed here
+                        if coinVisual and coinVisual.Material == Enum.Material.Glass then 
+                            local boxAdornment2 = coinVisual:FindFirstChild("beachballesp")
+                            if not boxAdornment2 then 
+                                boxAdornment2 = Instance.new("BoxHandleAdornment")
+                                boxAdornment2.Name = "beachballesp"
+                                boxAdornment2.Adornee = coinVisual
+                                boxAdornment2.AlwaysOnTop = true
+                                boxAdornment2.Size = coinVisual.Size
+                                boxAdornment2.Transparency = 0.3
+                                boxAdornment2.Color3 = Color3.fromRGB(255, 255, 255)
+                                boxAdornment2.Visible = true
+                                boxAdornment2.Parent = coinVisual
+                                boxAdornment2.ZIndex = 1
+                            end
+                        end
+                    end
+                end
+            elseif coinContainer and not _G.beachballesp then
+                for _, coinServer in pairs(coinContainer:GetChildren()) do
+                    if coinServer.Name == "Coin_Server" then
+                        local coinVisual = coinServer:FindFirstChild("CoinVisual")
+                        if coinVisual then
+                            local boxAdornment2 = coinVisual:FindFirstChild("beachballesp")
+                            if boxAdornment2 then
+                                boxAdornment2:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+local function coinesp()
+    while wait(0.1) do
+        local normal = game.Workspace:FindFirstChild("Normal")
+        if normal then
+            local coinContainer = normal:FindFirstChild("CoinContainer")
+            if coinContainer and _G.coinesp then
+                for _, coinSever in pairs(coinContainer:GetChildren()) do
+                    if coinSever.Name == "Coin_Server" then
+                        local coinVisual = coinSever:FindFirstChild("CoinVisual")
+                        if coinVisual and coinVisual.Material == Enum.Material.Plastic then
+                            local boxAdornment = coinVisual:FindFirstChild("coinesp")
+                            if not boxAdornment then
+                                boxAdornment = Instance.new("BoxHandleAdornment")
+                                boxAdornment.Name = "coinesp"
+                                boxAdornment.Adornee = coinVisual
+                                boxAdornment.AlwaysOnTop = true
+                                boxAdornment.Size = coinVisual.Size
+                                boxAdornment.Transparency = 0.3
+                                boxAdornment.Color3 = Color3.fromRGB(245, 205, 48)
+                                boxAdornment.Visible = true
+                                boxAdornment.Parent = coinVisual
+                                boxAdornment.ZIndex = 1
+                            end
+                        end
+                    end
+                end
+            elseif coinContainer and not _G.coinesp then
+                for _, coinSever in pairs(coinContainer:GetChildren()) do
+                    if coinSever.Name == "Coin_Server" then
+                        local coinVisual = coinSever:FindFirstChild("CoinVisual")
+                        if coinVisual then
+                            local boxAdornment = coinVisual:FindFirstChild("coinesp")
+                            if boxAdornment then
+                                boxAdornment:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+
+local function gunesp()
+    while wait(0.1) do
+        local normal = game.Workspace:FindFirstChild("Normal")
+        if normal then
+            local gunDrop = normal:FindFirstChild("GunDrop")
+            if gunDrop and _G.gunesp then
+                for _, face in pairs(Enum.NormalId:GetEnumItems()) do
+                    local surfaceGui = gunDrop:FindFirstChild("GunDropGui" .. face.Name)
+                    if not surfaceGui then
+                        surfaceGui = Instance.new("SurfaceGui")
+                        surfaceGui.Name = "GunDropGui" .. face.Name
+                        surfaceGui.Face = face
+                        surfaceGui.AlwaysOnTop = true
+                        surfaceGui.Parent = gunDrop
+                    end
+                    local frame = surfaceGui:FindFirstChild("GunDropFrame")
+                    if not frame then
+                        frame = Instance.new("Frame")
+                        frame.Size = UDim2.new(1, 0, 1, 0)
+                        frame.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                        frame.BorderSizePixel = 0
+                        frame.Parent = surfaceGui
+                    end
+                end
+            elseif gunDrop and not _G.gunesp then
+                for _, face in pairs(Enum.NormalId:GetEnumItems()) do
+                    local surfaceGui = gunDrop:FindFirstChild("GunDropGui" .. face.Name)
+                    if surfaceGui then
+                        surfaceGui:Destroy()
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function deleteFootsteps()
+while _G.DFS do
+    local footsteps = game.Workspace:FindFirstChild("Footsteps")
+    if footsteps then
+        footsteps:Destroy()
+    end
+    wait(.1)
+    end
+end
+
+local function destroyWeaponDisplays()
+    while _G.displaydestroy do
+        local weaponDisplays = game.Workspace:FindFirstChild("WeaponDisplays")
+        if weaponDisplays then
+            for _, child in pairs(weaponDisplays:GetChildren()) do
+                child:Destroy()
+            end
+        end
+        wait(0.1)
+    end
+end
+
+local jumpConnection
+
+local function infiniteJump()
+    if _G.infjump then
+        jumpConnection = userInputService.JumpRequest:Connect(function()
+            if game.Players.LocalPlayer.Character then
+                game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
+            end
+        end)
+    elseif jumpConnection then
+        jumpConnection:Disconnect()
+        jumpConnection = nil
+    end
+end
+
+local function noclip()
+    while _G.walkthroughwall do
+        if game.Players.LocalPlayer.Character then
+            for _, part in pairs(game.Players.LocalPlayer.Character:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+        wait(0.1)
+    end
+end
+
+local function pickupGun()
+    local playerHead = game.Players.LocalPlayer.Character.Head
+    local norm = game.Workspace:FindFirstChild("Normal")
+    if norm then
+        local gunDrop = norm:FindFirstChild("GunDrop")
+        if gunDrop then
+            for _, child in ipairs(gunDrop:GetChildren()) do
+                if child.Name == "TouchInterest" then
+                    firetouchinterest(playerHead, gunDrop, 0)
+                    wait(1)
+                    firetouchinterest(playerHead, gunDrop, 1)
+                else 
+                    print("Gun not found")
+                end
+            end
+        else
+            print("GunDrop not found in Normal")
+        end
+    else
+        print("Normal not found in Workspace")
+    end
+    local player = game.Players.LocalPlayer
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        local gun = backpack:FindFirstChild("Gun")
+        if gun then
+            print("found")
+        else
+            print("Not found")
+        end
+    else
+        print("Backpack not found in player")
+    end
+end
+
+local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()  -- RayField UI Library
+local Window = Library:CreateWindow({
+    Name = "MM2 ",
+    LoadingTitle = "Murder Mystery 2 Made by 266",
+    LoadingSubtitle = "By 266",
+})
+
+local pTab = Window:CreateTab("Player")
+local vTab = Window:CreateTab("Visuals")
+
+pTab:CreateToggle({
+	Name = "no-clip",
+	Callback = function(Value)
+		_G.walkthroughwall = Value
+        noclip()
+	end,
+})
+
+pTab:CreateToggle({
+    Name = "Infinite Jump",
+    Callback = function(Value)
+        _G.infjump = Value
+        infiniteJump()
+    end,
+})
+
+local newSpeed
+local newJumpPower
+
+game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    if newSpeed then
+        humanoid.WalkSpeed = newSpeed
+        print("WalkSpeed has been changed to " .. newSpeed)
+    end
+    if newJumpPower then
+        humanoid.JumpPower = newJumpPower
+        print("JumpPower has been changed to " .. newJumpPower)
+    end
+end)
+
+
+pTab:CreateInput({
+   Name = "Walkspeed Changer",
+   PlaceholderText = "16 Is base value",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(wsc)
+       newSpeed = tonumber(wsc)
+       if newSpeed then
+           local playerCharacter = game.Players.LocalPlayer.Character
+           if playerCharacter then
+               playerCharacter.Humanoid.WalkSpeed = newSpeed
+               print("WalkSpeed has been changed to " .. newSpeed)
+           else
+               print("Error: Player character not found.")
+           end
+       else
+           print("Error: Invalid input. Please enter a numerical value.")
+       end
+   end,
+})
+
+pTab:CreateInput({
+   Name = "Jumppower Changer",
+   PlaceholderText = "50 Is base value",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(jpc)
+       newJumpPower = tonumber(jpc)
+       if newJumpPower then
+           local playerCharacter = game.Players.LocalPlayer.Character
+           if playerCharacter then
+               playerCharacter.Humanoid.JumpPower = newJumpPower
+               print("JumpPower has been changed to " .. newJumpPower)
+           else
+               print("Error: Player character not found.")
+           end
+       else
+           print("Error: Invalid input. Please enter a numerical value.")
+       end
+   end,
+})
+
+pTab:CreateButton({
+	Name = "Grab dropped Gun",
+	Callback = function()
+        pickupGun()
+  	end,
+})
+
+vTab:CreateToggle({
+    Name = "Destroy Weapon Displays",
+    Callback = function(Value)
+        _G.displaydestroy = Value
+        destroyWeaponDisplays()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Delete footsteps Murderer (Power)",
+    Callback = function(Value)
+    _G.DFS = Value
+    deleteFootsteps()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Gun esp",
+    Callback = function(Value)
+    _G.gunesp = Value
+        gunesp()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Coin esp",
+    Callback = function(Value)
+    _G.coinesp = Value
+    coinesp()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Beach Ball esp",
+    Callback = function(Value)
+    _G.beachballesp = Value
+    beachballesp()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Innocent esp",
+    Callback = function(Value)
+    _G.innocentesp = Value
+    innocentesp()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Murderer esp",
+    Callback = function(Value)
+    _G.murdereresp = Value
+    murdereresp()
+    end,
+})
+
+vTab:CreateToggle({
+    Name = "Sheriff esp",
+    Callback = function(Value)
+    _G.sheriffesp = Value
+    sheriffesp()
+    end,
+})
