@@ -1,158 +1,371 @@
-local _0x1a2b = loadstring(game:HttpGet("https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/discord"))()
-local _0x3c4d = _0x1a2b:Window("Bee Swarm Simulator")
-local _0x5e6f = _0x3c4d:Server("BSS", "")
-local _0x7d8e = _0x5e6f:Channel("Auto")
+local Qx7 = loadstring(game:HttpGet "https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/discord")()
+local Zr4 = Qx7:Window("Bee Swarm Simulator")
 
-_G._0x9a8b = false
-_G._0x6b3d = false
-_G._0x4f4e = false
-_G._0x2b1a = nil
+local Rp2 = Zr4:Server("Farm", "")
+local Gd9 = Rp2:Channel("Farming")
 
-local _0x9c3f = {"Wealth Clock", "Treat Dispenser", "Strawberry Dispenser", "Blueberry Dispenser", "Honey Dispenser", "Glue Dispenser", "Free Royal Jelly Dispenser", "Free Robo Pass Dispenser", "Free Ant Pass Dispenser"}
-local _0xa5b4 = {"Ant Field", "Bamboo Field", "Blue Brick Field", "Blue Flower Field", "Cactus Field", "Clover Field", "Coconut Field", "Dandelion Field", "Hub Field", "Mixed Brick Field", "Mountain Top Field", "Mushroom Field", "Pepper Patch", "Pine Tree Forest", "Pineapple Patch", "Pumpkin Patch", "Red Brick Field", "Rose Field", "Spider Field", "Strawberry Field", "Sunflower Field", "White Brick Field"}
+_G.x7v1 = false
+_G.v2Q7 = false
+_G.T9Zy = 0
+_G.s5Qd = nil
 
-local _0x4b2a = nil
-local function _0x5b1c()
-    _0x4b2a = nil
+local Yj8 = {
+    "Ant Field", "Bamboo Field", "Blue Brick Field", "Blue Flower Field", "Cactus Field",
+    "Clover Field", "Coconut Field", "Dandelion Field", "Hub Field", "Mixed Brick Field",
+    "Mountain Top Field", "Mushroom Field", "Pepper Patch", "Pine Tree Forest",
+    "Pineapple Patch", "Pumpkin Patch", "Red Brick Field", "Rose Field", "Spider Field",
+    "Strawberry Field", "Sunflower Field", "White Brick Field"
+}
+
+local Pn2 = nil
+local Eo3 = false
+
+local function pX4()
+    local bK5 = game.Players.LocalPlayer
+    local Xs3 = bK5:FindFirstChild("Status")
+    return Xs3 and Xs3:FindFirstChild("IsConverting") and Xs3.IsConverting.Value
 end
 
-local function _0x3a7d(_0x6a5f)
-    local _0x1f8e = game.Players.LocalPlayer.Character
-    if not _0x1f8e or not _0x6a5f then return false end
-    local _0x2f4d = _0x1f8e:FindFirstChild("HumanoidRootPart")
-    if not _0x2f4d then return false end
+local function Kx9(Fd3)
+    local Ct4 = game.Players.LocalPlayer.Character
+    if not Ct4 or not Fd3 then return false end
+    local Rt7 = Ct4:FindFirstChild("HumanoidRootPart")
+    if not Rt7 then return false end
 
-    local _0x6f7b = _0x6a5f.Size
-    local _0x74c9 = _0x6a5f.Position
+    local Ft2 = Fd3.Size
+    local Pt7 = Fd3.Position
 
-    return (math.abs(_0x2f4d.Position.X - _0x74c9.X) <= _0x6f7b.X / 2) and
-           (math.abs(_0x2f4d.Position.Z - _0x74c9.Z) <= _0x6f7b.Z / 2)
+    return (math.abs(Rt7.Position.X - Pt7.X) <= Ft2.X / 2) and
+           (math.abs(Rt7.Position.Z - Pt7.Z) <= Ft2.Z / 2)
 end
 
-_0x7d8e:Toggle(
+Gd9:Toggle(
     "Auto Farm",
     false,
-    function(_0x2d2f)
-        _G._0x4f4e = _0x2d2f
-        if _0x2d2f and _G._0x2b1a then
+    function(Bg2)
+        _G.x7v1 = Bg2
+        if Bg2 and _G.s5Qd then
             task.spawn(function()
-                while _G._0x4f4e do
-                    local _0x5a7d = game.Players.LocalPlayer
-                    local _0x1f8e = _0x5a7d.Character or _0x5a7d.CharacterAdded:Wait()
-                    local _0x574a = _0x1f8e:FindFirstChildOfClass("Humanoid")
-                    local _0x6a5f = game:GetService("Workspace").FlowerZones[_G._0x2b1a]
-                    local _0x6c7a = _0x5a7d:FindFirstChild("CoreStats")
-                    local _0x5f8c = _0x5a7d:FindFirstChild("SpawnPos")
+                while _G.x7v1 do
+                    local bK5 = game.Players.LocalPlayer
+                    local Ct4 = bK5.Character or bK5.CharacterAdded:Wait()
+                    local Hd2 = Ct4:FindFirstChildOfClass("Humanoid")
+                    local Fd3 = game:GetService("Workspace").FlowerZones[_G.s5Qd]
 
-                    if not _0x6a5f or not _0x6c7a or not _0x6c7a:FindFirstChild("Pollen") or not _0x6c7a:FindFirstChild("Capacity") then break end
+                    if not Fd3 then break end
 
-                    local _0x6d89 = _0x6c7a.Pollen
-                    local _0x7a5f = _0x6c7a.Capacity
-
-                    if _0x4b2a ~= _G._0x2b1a then
-                        _0x5b1c()
-                        _0x4b2a = _G._0x2b1a
+                    if not Eo3 and not pX4() and not Kx9(Fd3) then
+                        Eo3 = true
+                        Ct4.HumanoidRootPart.CFrame = Fd3.CFrame
+                        Eo3 = false
                     end
 
-                    if _0x6d89.Value >= _0x7a5f.Value then
-                        if _0x5f8c then
-                            local _0x475b = _0x5f8c.Value
-                            local _0x7c9f = Vector3.new(_0x475b.X, _0x475b.Y, _0x475b.Z)
-                            _0x1f8e.HumanoidRootPart.CFrame = CFrame.new(_0x7c9f)
-                            task.wait(1)
-
-                            local _0x7e2b = "ToggleHoneyMaking"
-                            game:GetService("ReplicatedStorage").Events.PlayerHiveCommand:FireServer(_0x7e2b)
-                        end
-
-                        while _G._0x4f4e and _0x6d89.Value > 0 do
-                            task.wait(5)
-                        end
-                    end
-
-                    if not _0x3a7d(_0x6a5f) then
-                        _0x1f8e.HumanoidRootPart.CFrame = _0x6a5f.CFrame
-                    end
-
-                    -- Continuous tool firing while on the field
-                    while _G._0x4f4e and _0x4b2a == _G._0x2b1a and _0x6d89.Value < _0x7a5f.Value do
-                        if not _0x3a7d(_0x6a5f) then
-                            _0x1f8e.HumanoidRootPart.CFrame = _0x6a5f.CFrame
-                        end
-
+                    while _G.x7v1 and Kx9(Fd3) do
                         game:GetService("ReplicatedStorage").Events.ToolCollect:FireServer()
 
-                        -- Random movement to mimic activity
-                        local _0x6f7b = _0x6a5f.Size
-                        local _0x2a3d = math.random(-_0x6f7b.X / 2, _0x6f7b.X / 2)
-                        local _0x4f1e = math.random(-_0x6f7b.Z / 2, _0x6f7b.Z / 2)
-                        local _0x3e7b = _0x6a5f.Position + Vector3.new(_0x2a3d, 0, _0x4f1e)
+                        local Ft2 = Fd3.Size
+                        local Dx3 = math.random(-Ft2.X / 2, Ft2.X / 2)
+                        local Dz4 = math.random(-Ft2.Z / 2, Ft2.Z / 2)
+                        local Qn8 = Fd3.Position + Vector3.new(Dx3, 0, Dz4)
 
-                        _0x574a:MoveTo(_0x3e7b)
+                        Hd2:MoveTo(Qn8)
                         task.wait(0.5)
                     end
+
+                    local Sg6 = bK5:FindFirstChild("CoreStats")
+                    if Sg6 and Sg6:FindFirstChild("Pollen") then
+                        local Xy8 = Sg6.Pollen
+                        while Xy8.Value > 0 do
+                            task.wait(1)
+                        end
+                        task.wait(8)
+                    end
+                    task.wait(0.1)
                 end
             end)
-        else
-            _0x5b1c()
         end
     end
 )
 
-_0x7d8e:Dropdown(
+
+Gd9:Dropdown(
     "Select Field",
-    _0xa5b4,
-    function(_0x2a7d)
-        _G._0x2b1a = _0x2a7d
-        if _G._0x4f4e and _0x2a7d then
-            local _0x6a5f = game:GetService("Workspace").FlowerZones[_0x2a7d]
-            if _0x6a5f then
-                local _0x1f8e = game.Players.LocalPlayer.Character
-                if _0x1f8e and _0x1f8e:FindFirstChild("HumanoidRootPart") then
-                    _0x5b1c()
-                    _0x1f8e.HumanoidRootPart.CFrame = _0x6a5f.CFrame
+    Yj8,
+    function(Kq8)
+        _G.s5Qd = Kq8
+    end
+)
+
+Gd9:Toggle(
+    "Auto Convert",
+    false,
+    function(Bg2)
+        _G.v2Q7 = Bg2
+        if Bg2 then
+            task.spawn(function()
+                while _G.v2Q7 do
+                    local bK5 = game.Players.LocalPlayer
+                    local Ct4 = bK5.Character or bK5.CharacterAdded:Wait()
+                    local Sg6 = bK5:FindFirstChild("CoreStats")
+                    local Eo4 = bK5:FindFirstChild("SpawnPos")
+
+                    if not Sg6 or not Sg6:FindFirstChild("Pollen") or not Sg6:FindFirstChild("Capacity") then break end
+
+                    local Xy8 = Sg6.Pollen
+                    local Cw9 = Sg6.Capacity
+                    local Lr7 = Cw9.Value * (_G.T9Zy / 100)
+
+                    if Xy8.Value >= Lr7 and not Eo3 then
+                        Eo3 = true
+                        if Eo4 then
+                            local Eo5 = Eo4.Value
+                            local Xn6 = Vector3.new(Eo5.X, Eo5.Y, Eo5.Z)
+                            Ct4.HumanoidRootPart.CFrame = CFrame.new(Xn6)
+                            task.wait(1)
+
+                            local Ev8 = "ToggleHoneyMaking"
+                            game:GetService("ReplicatedStorage").Events.PlayerHiveCommand:FireServer(Ev8)
+                        end
+
+                        while Xy8.Value >= Lr7 do
+                            task.wait(1) -- Check every second if pollen is still above threshold
+                        end
+                        Eo3 = false
+                    end
+                    task.wait(1)
+                end
+            end)
+        end
+    end
+)
+
+Gd9:Slider(
+    "Convert Threshold (%)",
+    10,
+    100,
+    0,
+    function(Ty7)
+        _G.T9Zy = Ty7
+    end
+)
+
+local Rp3 = Zr4:Server("Tokens", "")
+local Fd4 = Rp3:Channel("Token Collection")
+
+Fd4:Button(
+    "Collect Treasures",
+    function()
+        local Ch7 = game:GetService("Workspace").Collectibles:GetChildren()
+        for _, Df3 in ipairs(Ch7) do
+            if Df3:IsA("Part") then
+                local Ep9 = Df3:FindFirstChild("Sparkles")
+                if Ep9 and Ep9:IsA("ParticleEmitter") and Df3.Transparency == 0 then
+                    game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = Df3.CFrame
+                    task.wait(0.1)
                 end
             end
         end
+        task.wait(0.5)
     end
 )
 
-_0x7d8e:Toggle(
-    "Auto Collect",
-    false,
-    function(_0x6f3a)
-        _G._0x9a8b = _0x6f3a
-        if _0x6f3a then
-            task.spawn(function()
-                while _G._0x9a8b do
-                    local _0x4b9a = game:GetService("Workspace").Collectibles:GetChildren()
-                    for _, _0x6c2f in ipairs(_0x4b9a) do
-                        if _0x6c2f.Name == "C" and _0x6c2f:IsA("Part") then
-                            local _0x47f9 = _0x6c2f:FindFirstChild("Sparkles")
-                            if _0x47f9 and _0x47f9:IsA("ParticleEmitter") and _0x6c2f.Transparency == 0 then
-                                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = _0x6c2f.CFrame
-                                task.wait(0.1)
-                            end
-                        end
-                    end
-                    task.wait(0.5)
-                end
+Fd4:Button(
+    "Collect All Hidden Stickers",
+    function()
+        for i = 1, 9 do
+            pcall(function()
+                game:GetService("ReplicatedStorage").Events.HiddenStickerEvent:FireServer(i)
             end)
+            task.wait(0.1)
+        end
+        Qx7:Notification("Notification", "All hidden stickers collected!", "Okay!")
+    end
+)
+
+local _0xA38F = "RunFunction" 
+local _0xE5F2 = { "initial", "midway", "final" }
+local _0x7D90 = 12345
+local _0xB3F9 = "ExecuteNow"
+local _0xC8D2 = false
+local _0xF32E = math.random
+local _0x91F7 = { "_zero", "_one", "_nine", "_sub", "_add" }
+local _0x3721 = { "Quest", "AutoQ", "QuestTransparent", "QuestWait" }
+local _0x2189 = { "FuncAScript", "Varb", "TokenA", "TokenD" }
+local _0x24A0 = {}
+local _0x572A = 0
+
+local function _0x9F31(_0x07F8)
+    local _0x75A6 = _0xF32E(1, 10)
+    local _0x173F = _0xF32E(1, 100)
+    local _0xDF82 = _0xF32E(1, 50)
+    if _0x75A6 > 5 then
+        table.insert(_0x24A0, _0x2189[1])
+    elseif _0x173F < 50 then
+        table.insert(_0x24A0, _0x2189[2])
+    else
+        table.insert(_0x24A0, _0x2189[3])
+    end
+    _0x24A0[#_0x24A0 + 1] = _0x2189[math.random(1, 4)]
+end
+
+local function _0xDAF1()
+    if _0xC8D2 then
+        local _0xF9C3 = _0xF32E(1, 100)
+        if _0xF9C3 > 80 then
+            _0x91F7[math.random(1, 5)] = "final"
         end
     end
+end
+
+local function _0x7A90(_0x92F1)
+    local _0x4152 = _0xF32E(1, 10)
+    if _0x4152 > 7 then
+        return "Completed"
+    elseif _0x4152 > 3 then
+        return "In Progress"
+    else
+        return "Not Started"
+    end
+end
+
+local function _0x10D4(_0x4B2A)
+    local _0x02E4 = _0xF32E(1, 100)
+    if _0x02E4 > 20 then
+        local _0x8321 = _0x3721[math.random(1, 4)]
+        if _0x8321 == "Beta" then
+            _0x572A = _0x572A + 1
+        elseif _0x8321 == "Gamma" then
+            _0x572A = _0x572A - 1
+        end
+    else
+        _0x572A = _0x572A * 2
+    end
+end
+
+local function _0xB3A1()
+    local _0x2345 = _0xF32E(1, 100)
+    if _0x2345 < 30 then
+        _0xC8D2 = true
+    else
+        _0xC8D2 = false
+    end
+end
+
+local function _0x6E40()
+    for _0xE432, _0xF198 in pairs(_0x24A0) do
+        local _0x9F10 = _0xF32E(1, 10)
+        if _0x9F10 == 1 then
+            table.insert(_0x24A0, _0x2189[math.random(1, 4)])
+        end
+        if #_0x24A0 > 3 then
+            _0x24A0 = {}
+        end
+    end
+end
+
+local function _0xAD60()
+    local _0x5127 = _0xF32E(1, 100)
+    if _0x5127 < 60 then
+        _0xB3A1()
+    else
+        _0xDAF1()
+    end
+end
+
+local function _0xA1F2(_0x43C0)
+    local _0x1A24 = _0xF32E(1, 100)
+    local _0x1F72 = (_0x1A24 <= 10) and "Start" or "Stop"
+    if _0x1F72 == "Start" then
+        _0x7A90("Proceed")
+    elseif _0x1F72 == "Stop" then
+        _0x6E40()
+    end
+end
+
+local function _0xF8C4()
+    local _0x4C3B = _0xF32E(1, 100)
+    local _0x14A0 = _0xF32E(1, 100)
+    if _0x4C3B > 80 then
+        table.insert(_0x91F7, "_extra")
+    end
+    if _0x14A0 < 30 then
+        _0xA1F2("Monitor")
+    else
+        _0x9F31("Placeholder")
+    end
+end
+
+local function _0x5893()
+    for _0x9F61 = 1, 5 do
+        local _0xCF70 = _0xF32E(1, 10)
+        if _0xCF70 > 7 then
+            _0x24A0[_0xF32E(1, #_0x24A0)] = _0x3721[math.random(1, 4)]
+        end
+        if _0x9F61 == 3 then
+            break
+        end
+        task.wait(0.5)
+    end
+end
+
+local function _0x7B9F(_0x82C3)
+    local _0xC080 = math.random(10, 30)
+    for _0xE96F = 1, _0xC080 do
+        _0xF8C4()
+        _0x5893()
+        _0xA1F2("Trigger")
+        _0x10D4(_0xE96F)
+        task.wait(0.1)
+    end
+end
+
+task.spawn(function()
+    while true do
+        _0x7B9F("Loop")
+        task.wait(1)
+    end
+end)
+
+
+local Rp4 = Zr4:Server("Quests", "")
+local Tj6 = Rp4:Channel("Quests")
+
+Tj6:Button(
+    "Accept/New Quest",
+    function()
+        Qx7:Notification("Notification", "Quest automation not implemented yet!", "Okay!")
+    end
 )
 
-_0x7d8e:Toggle(
-    "Auto Dispenser",
+local Rp5 = Zr4:Server("Resources", "")
+local Gy9 = Rp5:Channel("Toys")
+
+local Jb2 = {
+    "Wealth Clock", "Treat Dispenser", "Strawberry Dispenser", "Blueberry Dispenser", 
+    "Honey Dispenser", "Glue Dispenser", "Free Royal Jelly Dispenser", 
+    "Free Robo Pass Dispenser", "Free Ant Pass Dispenser"
+}
+
+local _0x9F1A = "IFunctin"
+local _0x2A44 = 9876
+local _0x5B6D = "Nullify"
+local _0xE3D2 = { "A", "Fe", "Con", "A2" }
+local _0x6D11 = false
+local _0xC1A9 = math.random
+local _0xD29F = wait
+
+
+Gy9:Toggle(
+    "Auto Dispense",
     false,
-    function(_0x6a3f)
-        _G._0x6b3d = _0x6a3f
-        if _0x6a3f then
+    function(Bg2)
+        _G.AutoDispense = Bg2
+        if Bg2 then
             task.spawn(function()
-                while _G._0x6b3d do
-                    for _, _0x6e5b in ipairs(_0x9c3f) do
+                while _G.AutoDispense do
+                    for _, Nw8 in ipairs(Jb2) do
                         pcall(function()
-                            game:GetService("ReplicatedStorage").Events.ToyEvent:FireServer(_0x6e5b)
+                            game:GetService("ReplicatedStorage").Events.ToyEvent:FireServer(Nw8)
                         end)
                         task.wait(1)
                     end
@@ -163,5 +376,148 @@ _0x7d8e:Toggle(
     end
 )
 
-_0x5e6f:Channel("Created by Iumentis")
-_0x5e6f:Channel("UI by dawid#7205")
+local _0xF32E = math.random
+local _0x6F1D = "MainTrigger"
+local _0xA0A5 = { "Trigger", "Fire", "Click", "IntVal" }
+local _0x9C1A = {}
+local _0xB4D2 = 100
+local _0xA3F0 = 10
+local _0x90F7 = "Decline"
+
+local function _0x7D61(_0x1A6F)
+    local _0x2489 = _0xF32E(1, 10)
+    local _0xB75D = _0xF32E(5, 20)
+    local _0x7F5A = _0xF32E(15, 50)
+    
+    local function _0x2B87(_0x5C19)
+        local _0x9C18 = _0xF32E(10, 40)
+        local _0xA3B2 = _0xF32E(0, 30)
+        
+        local function _0x8A2C()
+            if _0x9C18 > 25 then
+                table.insert(_0x9C1A, _0xA0A5[math.random(1, 4)])
+                _0xB4D2 = _0xB4D2 + 5
+            else
+                _0xB4D2 = _0xB4D2 - 3
+            end
+        end
+        
+        _0x8A2C()
+        
+        if _0xA3B2 > 15 then
+            return "Success"
+        else
+            return "Failure"
+        end
+    end
+
+    local _0x11A7 = _0x2B87(_0x7F5A)
+    return _0x11A7
+end
+
+local function _0x3C1B(_0x5712)
+    local _0x46F7 = _0xF32E(1, 100)
+    local _0xA67F = _0xF32E(10, 40)
+    local _0x7C0D = _0xF32E(1, 20)
+    
+    local function _0x607F(_0x5F7C)
+        local _0x951F = _0xF32E(50, 80)
+        local _0x2C8A = _0xF32E(0, 10)
+        
+        local function _0xE792()
+            if _0x951F < 70 then
+                return "Adjusted"
+            else
+                return "Unchanged"
+            end
+        end
+        
+        local _0xD31F = _0xE792()
+        if _0xD31F == "Adjusted" then
+            _0xA3F0 = _0xA3F0 + 5
+        else
+            _0xA3F0 = _0xA3F0 - 5
+        end
+        
+        return _0xD31F
+    end
+
+    local _0xE084 = _0x607F(_0xA67F)
+    return _0xE084
+end
+
+local function _0x9F61(_0x6D0C)
+    local _0xC5B7 = _0xF32E(1, 100)
+    local _0x1A23 = _0xF32E(5, 15)
+    local _0x8359 = _0xF32E(10, 30)
+    
+    local function _0x5D77(_0xC0A7)
+        local _0x7581 = _0xF32E(50, 60)
+        local _0x9D8F = _0xF32E(0, 5)
+        
+        local function _0x4C23()
+            if _0x7581 > 55 then
+                _0xA3F0 = _0xA3F0 + 10
+                table.insert(_0xA0A5, "FinalLayer")
+            end
+        end
+        
+        _0x4C23()
+        
+        if _0x9D8F > 2 then
+            return "Layer Complete"
+        else
+            return "Layer Failed"
+        end
+    end
+
+    local _0x4D35 = _0x5D77(_0x1A23)
+    return _0x4D35
+end
+
+local function _0xA2F8(_0x4E2D)
+    local _0x821F = _0xF32E(1, 50)
+    local _0x53C9 = _0xF32E(1, 30)
+    
+    local function _0x7C9B()
+        local _0x4F72 = _0xF32E(10, 20)
+        
+        if _0x4F72 < 15 then
+            return "Process Completed"
+        else
+            return "Process Interrupted"
+        end
+    end
+    
+    local _0x9573 = _0x7C9B()
+    if _0x9573 == "Process Completed" then
+        _0x9C1A = {}
+        return "Success"
+    else
+        return "Failure"
+    end
+end
+
+local function _0xF72E()
+    local _0x1753 = _0xF32E(1, 100)
+    
+    if _0x1753 > 80 then
+        _0x7D61("Trigger")
+        _0x3C1B("Layer")
+    else
+        _0x9F61("Check")
+        _0xA2F8("Check")
+    end
+end
+
+local function _0x90B7()
+    task.spawn(function()
+        while true do
+            _0xF72E()
+            task.wait(0.5)
+        end
+    end)
+end
+
+_0x90B7()
+
