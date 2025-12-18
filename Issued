@@ -3,259 +3,179 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 
-print("=== PURE TIMING ATTACK DROWN BYPASS ===")
+-- =============================================
+-- TIER 1: HOOK ALL DROWN-RELATED FUNCTIONS
+-- =============================================
+local hookedFunctions = {}
 
--- ============================================
--- PHASE 1: FIND THE EXACT VALIDATION INTERVAL
--- ============================================
+local function safeHook(module, functionName, replacement)
+    if not module then return false end
+    local original = module[functionName]
+    if not original then return false end
+    hookedFunctions[functionName] = original
+    module[functionName] = replacement
+    return true
+end
 
-local damageLog = {}
-local lastHealth = 100
-local validationInterval = nil
+-- Load modules safely
+local DrownUtils, DrownConsts
+for i = 1, 5 do
+    local success1, result1 = pcall(require, ReplicatedStorage:WaitForChild("Drown", 2):WaitForChild("DrownUtils", 2))
+    local success2, result2 = pcall(require, ReplicatedStorage:WaitForChild("Drown", 2):WaitForChild("DrownConsts", 2))
+    if success1 then DrownUtils = result1 end
+    if success2 then DrownConsts = result2 end
+    if DrownUtils and DrownConsts then break end
+    task.wait(0.5)
+end
 
-RunService.Heartbeat:Connect(function()
-    local char = localPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        local humanoid = char.Humanoid
-        local currentHealth = humanoid.Health
-        
-        if currentHealth < lastHealth then
-            local damage = lastHealth - currentHealth
-            local timeNow = tick()
-            
-            table.insert(damageLog, {
-                time = timeNow,
-                damage = damage,
-                position = char:GetPivot().Position
-            })
-            
-            print(string.format("[DAMAGE] Lost %.1f health at %.1f seconds", damage, timeNow))
-            
-            -- Calculate interval between damages
-            if #damageLog >= 2 then
-                local interval = damageLog[#damageLog].time - damageLog[#damageLog-1].time
-                validationInterval = interval
-                print(string.format("[INTERVAL] Server validates every %.2f seconds", interval))
-                
-                -- If it's ~8 seconds (from DrownConsts), we've found the heartbeat!
-                if math.abs(interval - 8) < 0.5 then
-                    print("[CRITICAL] Found 8-second validation window!")
-                end
-            end
-        end
-        
-        lastHealth = currentHealth
-    end
-end)
+if DrownUtils then
+    -- Hook 1: Always report 0% drowning
+    safeHook(DrownUtils, "getDrownPercent", function(player)
+        if player == localPlayer then return 0 end
+        return hookedFunctions.getDrownPercent(player)
+    end)
 
--- ============================================
--- PHASE 2: BEAT THE VALIDATION WINDOW
--- ============================================
+    -- Hook 2: Never appear to be drowning
+    safeHook(DrownUtils, "getIsPlayerDrowning", function(player)
+        if player == localPlayer then return false end
+        return hookedFunctions.getIsPlayerDrowning(player)
+    end)
+    print("✓ Core functions hooked")
+end
 
-local lastReset = tick()
-local resetCount = 0
-
--- This is the CORE exploit: Reset drown state JUST BEFORE server checks
-local function timingAttackLoop()
+-- =============================================
+-- TIER 2: CONTINUOUS ATTRIBUTE RESETTING
+-- =============================================
+local function continuousAttributeReset()
+    local lastReset = tick()
     RunService.Heartbeat:Connect(function()
-        if not validationInterval then return end
-        
-        local currentTime = tick()
-        local timeSinceReset = currentTime - lastReset
-        
-        -- Reset 0.3 seconds BEFORE server validation
-        -- If server checks every 8s, we reset at 7.7s
-        local resetThreshold = validationInterval - 0.3
-        
-        if timeSinceReset > resetThreshold then
-            pcall(function()
-                -- CRITICAL: Reset ALL drown-related attributes
-                localPlayer:SetAttribute("DrownPercent", 0)
-                
-                -- Try to find and reset any other drown attributes
-                for _, attr in pairs({"DrownTimer", "IsDrowning", "WaterTime"}) do
-                    pcall(function()
-                        localPlayer:SetAttribute(attr, 0)
-                    end)
-                end
-                
-                resetCount = resetCount + 1
-                print(string.format("[RESET #%d] Beat server check by %.1fs", 
-                      resetCount, validationInterval - timeSinceReset))
-                
-                lastReset = currentTime
-            end)
+        local character = localPlayer.Character
+        if not character then return end
+        local head = character:FindFirstChild("Head")
+        if not head then return end
+
+        if head.Position.Y < 180 then 
+            if tick() - lastReset > 0.05 then
+                pcall(function()
+                    localPlayer:SetAttribute("DrownPercent", 0)
+                    if DrownUtils and DrownUtils.setDrownPercent then
+                        DrownUtils.setDrownPercent(localPlayer, 0)
+                    end
+                end)
+                lastReset = tick()
+            end
         end
     end)
 end
+task.spawn(continuousAttributeReset)
 
--- ============================================
--- PHASE 3: NETWORK STATE SPOOFING
--- ============================================
+-- =============================================
+-- TIER 3: POSITION SPOOFING (FIXED)
+-- =============================================
+local function positionSpoofing()
+    RunService.Heartbeat:Connect(function()
+        local character = localPlayer.Character
+        if not character then return end
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
 
--- The server might track additional state beyond attributes
-local function spoofNetworkState()
-    -- Look for RemoteEvents that handle drown state
-    local foundRemotes = {}
-    
-    local function scanRemotes(parent)
-        for _, child in pairs(parent:GetChildren()) do
-            if child:IsA("RemoteEvent") then
-                local nameLower = child.Name:lower()
-                if nameLower:find("drown") or nameLower:find("water") or nameLower:find("breath") then
-                    table.insert(foundRemotes, child)
-                    print("[REMOTE] Found:", child:GetFullName())
-                end
-            end
-            scanRemotes(child)
-        end
-    end
-    
-    scanRemotes(ReplicatedStorage)
-    scanRemotes(game:GetService("Workspace"))
-    
-    -- Try to hook them to send "not drowning" state
-    for _, remote in pairs(foundRemotes) do
-        pcall(function()
-            local originalFire = remote.FireServer
-            remote.FireServer = function(self, ...)
-                local args = {...}
+        if humanoidRootPart.Position.Y < 180 then
+            pcall(function()
+                -- Attempt to push velocity up to counteract sinking
+                humanoidRootPart.Velocity = Vector3.new(0, 5, 0)
                 
-                -- Modify any drown-related arguments
+                -- Note: SetNetworkOwner is usually server-side, 
+                -- but included here to match your original logic.
+                if humanoidRootPart.SetNetworkOwner then
+                    -- humanoidRootPart:SetNetworkOwner(localPlayer) 
+                end
+            end)
+        end -- Added missing 'end' for the IF statement
+    end)
+end
+task.spawn(positionSpoofing)
+
+-- =============================================
+-- TIER 4: PACKET MANIPULATION
+-- =============================================
+local function interceptDrownPackets()
+    for _, child in pairs(ReplicatedStorage:GetDescendants()) do
+        if child:IsA("RemoteEvent") and (child.Name:find("Drown") or child.Name:find("Water")) then
+            print("Found drown-related RemoteEvent:", child:GetFullName())
+            local originalFire = child.FireServer
+            child.FireServer = function(self, ...)
+                local args = {...}
                 for i, arg in ipairs(args) do
-                    if type(arg) == "number" and arg > 0 then
-                        args[i] = 0 -- Set drown percent to 0
-                    elseif type(arg) == "boolean" then
-                        args[i] = false -- Set "isDrowning" to false
+                    if type(arg) == "number" and (arg > 0 and arg <= 1) then
+                        args[i] = 0
                     end
                 end
-                
-                return originalFire(self, unpack(args))
+                return originalFire(self, table.unpack(args))
             end
-            print("[HOOK] Network spoof active for:", remote.Name)
-        end)
-    end
-end
-
--- ============================================
--- PHASE 4: MEMORY & FUNCTION HOOKING
--- ============================================
-
-local function hookCriticalFunctions()
-    -- Try to load DrownUtils module
-    local DrownUtils
-    pcall(function()
-        local drownFolder = ReplicatedStorage:FindFirstChild("Drown")
-        if drownFolder then
-            local utils = drownFolder:FindFirstChild("DrownUtils")
-            if utils then
-                DrownUtils = require(utils)
-            end
-        end
-    end)
-    
-    if DrownUtils then
-        -- Hook getDrownPercent to always return 0 for local player
-        if DrownUtils.getDrownPercent then
-            local original = DrownUtils.getDrownPercent
-            DrownUtils.getDrownPercent = function(player)
-                if player == localPlayer then
-                    return 0
-                end
-                return original(player)
-            end
-            print("[HOOK] getDrownPercent spoofed")
-        end
-        
-        -- Hook getIsPlayerDrowning to always return false
-        if DrownUtils.getIsPlayerDrowning then
-            local original = DrownUtils.getIsPlayerDrowning
-            DrownUtils.getIsPlayerDrowning = function(player)
-                if player == localPlayer then
-                    return false
-                end
-                return original(player)
-            end
-            print("[HOOK] getIsPlayerDrowning spoofed")
         end
     end
 end
 
--- ============================================
--- DEPLOYMENT
--- ============================================
+if pcall(function() return getrawmetatable(game) end) then
+    task.spawn(interceptDrownPackets)
+end
 
-print("\n=== DEPLOYING SYSTEMS ===")
+-- =============================================
+-- TIER 5: VISUAL CLEANUP
+-- =============================================
+local function removeVisualEffects()
+    while true do
+        task.wait(0.5)
+        local character = localPlayer.Character
+        if character then
+            local head = character:FindFirstChild("Head")
+            if head then
+                for _, child in pairs(head:GetChildren()) do
+                    if child:IsA("ParticleEmitter") then
+                        child:Destroy()
+                    end
+                end
+            end
 
--- 1. First, find the validation interval
-print("1. Finding server validation interval...")
-print("   Jump in water and note the damage timing.")
-
--- 2. Once we know the interval, deploy timing attack
-spawn(function()
-    wait(15) -- Give time to measure interval
-    if validationInterval then
-        print(string.format("\n2. Deploying timing attack (interval: %.2fs)...", validationInterval))
-        timingAttackLoop()
-    else
-        print("\n2. No interval found yet - will deploy when detected")
-        -- Keep checking
-        while not validationInterval do
-            wait(1)
-        end
-        print(string.format("   Interval found: %.2fs - deploying attack", validationInterval))
-        timingAttackLoop()
-    end
-end)
-
--- 3. Deploy other systems immediately
-print("3. Deploying network spoofing...")
-pcall(spoofNetworkState)
-
-print("4. Deploying function hooks...")
-pcall(hookCriticalFunctions)
-
-print("\n=== TEST PROTOCOL ===")
-print("1. Enter deep water")
-print("2. Wait 20+ seconds")
-print("3. Monitor console for:")
-print("   - Damage intervals (should be consistent)")
-print("   - Reset messages (should beat damage)")
-print("4. If damage stops, SUCCESS!")
-print("5. If damage continues, adjust reset timing")
-
--- Auto-analysis after 30 seconds
-spawn(function()
-    wait(30)
-    print("\n=== 30-SECOND ANALYSIS ===")
-    
-    if #damageLog == 0 then
-        print("✅ NO DAMAGE TAKEN - BYPASS SUCCESSFUL!")
-    elseif #damageLog == 1 then
-        print("⚠️ Single damage instance - server may do initial check")
-    else
-        print(string.format("📊 %d damage instances", #damageLog))
-        if validationInterval then
-            print(string.format("   Server validates every %.2f seconds", validationInterval))
-            
-            -- Calculate success rate
-            local expectedChecks = 30 / validationInterval
-            local actualDamage = #damageLog
-            local successRate = (1 - (actualDamage / expectedChecks)) * 100
-            
-            print(string.format("   Bypass success rate: %.1f%%", successRate))
-            
-            if successRate > 80 then
-                print("   🎉 EXCELLENT - Timing attack working!")
-            elseif successRate > 50 then
-                print("   ⚠️ PARTIAL - Adjust reset timing")
-            else
-                print("   ❌ NEEDS WORK - Try different approach")
+            local playerGui = localPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local drownGui = playerGui:FindFirstChild("DrownGui")
+                if drownGui then
+                    drownGui.Enabled = false
+                end
             end
         end
     end
-end)
+end
+task.spawn(removeVisualEffects)
 
-print("\n=== READY ===")
-print("This is PURE timing/network exploitation.")
-print("NO position manipulation - just beating server checks!")
+-- =============================================
+-- TEST SUITE
+-- =============================================
+local function runTest()
+    print("\n🧪 Starting 30-second underwater test...")
+    local character = localPlayer.Character
+    if not character or not character:FindFirstChild("Humanoid") then 
+        print("❌ Test failed: Character not found")
+        return 
+    end
+    
+    local startHealth = character.Humanoid.Health
+    local startTime = tick()
+
+    while tick() - startTime < 30 do
+        task.wait(1)
+        if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health < startHealth then
+            print("❌ Damage detected at " .. math.floor(tick() - startTime) .. " seconds!")
+            return false
+        end
+    end
+    print("✓ No damage for 30 seconds!")
+    return true
+end
+
+print("========================================")
+print("DROWN PROTECTION ACTIVE")
+print("========================================")
+task.wait(2)
+task.spawn(runTest)
