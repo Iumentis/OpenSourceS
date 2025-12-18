@@ -29,13 +29,15 @@ RunService.Heartbeat:Connect(function()
                 position = char:GetPivot().Position
             })
             
-            print("[DAMAGE] Lost " .. tostring(damage) .. " health at " .. tostring(timeNow) .. " seconds")
+            print(string.format("[DAMAGE] Lost %.1f health at %.1f seconds", damage, timeNow))
             
+            -- Calculate interval between damages
             if #damageLog >= 2 then
                 local interval = damageLog[#damageLog].time - damageLog[#damageLog-1].time
                 validationInterval = interval
-                print("[INTERVAL] Server validates every " .. string.format("%.2f", interval) .. " seconds")
+                print(string.format("[INTERVAL] Server validates every %.2f seconds", interval))
                 
+                -- If it's ~8 seconds (from DrownConsts), we've found the heartbeat!
                 if math.abs(interval - 8) < 0.5 then
                     print("[CRITICAL] Found 8-second validation window!")
                 end
@@ -53,18 +55,24 @@ end)
 local lastReset = tick()
 local resetCount = 0
 
+-- This is the CORE exploit: Reset drown state JUST BEFORE server checks
 local function timingAttackLoop()
     RunService.Heartbeat:Connect(function()
         if not validationInterval then return end
         
         local currentTime = tick()
         local timeSinceReset = currentTime - lastReset
+        
+        -- Reset 0.3 seconds BEFORE server validation
+        -- If server checks every 8s, we reset at 7.7s
         local resetThreshold = validationInterval - 0.3
         
         if timeSinceReset > resetThreshold then
             pcall(function()
+                -- CRITICAL: Reset ALL drown-related attributes
                 localPlayer:SetAttribute("DrownPercent", 0)
                 
+                -- Try to find and reset any other drown attributes
                 for _, attr in pairs({"DrownTimer", "IsDrowning", "WaterTime"}) do
                     pcall(function()
                         localPlayer:SetAttribute(attr, 0)
@@ -72,9 +80,8 @@ local function timingAttackLoop()
                 end
                 
                 resetCount = resetCount + 1
-                -- Fixed string conversion here
-                local timeBeaten = validationInterval - timeSinceReset
-                print("[RESET #" .. tostring(resetCount) .. "] Beat server check by " .. string.format("%.1f", timeBeaten) .. "s")
+                print(string.format("[RESET #%d] Beat server check by %.1fs", 
+                      resetCount, validationInterval - timeSinceReset))
                 
                 lastReset = currentTime
             end)
@@ -86,7 +93,9 @@ end
 -- PHASE 3: NETWORK STATE SPOOFING
 -- ============================================
 
+-- The server might track additional state beyond attributes
 local function spoofNetworkState()
+    -- Look for RemoteEvents that handle drown state
     local foundRemotes = {}
     
     local function scanRemotes(parent)
@@ -95,33 +104,35 @@ local function spoofNetworkState()
                 local nameLower = child.Name:lower()
                 if nameLower:find("drown") or nameLower:find("water") or nameLower:find("breath") then
                     table.insert(foundRemotes, child)
-                    print("[REMOTE] Found: " .. child:GetFullName())
+                    print("[REMOTE] Found:", child:GetFullName())
                 end
             end
-            pcall(function() scanRemotes(child) end)
+            scanRemotes(child)
         end
     end
     
     scanRemotes(ReplicatedStorage)
-    scanRemotes(workspace)
+    scanRemotes(game:GetService("Workspace"))
     
+    -- Try to hook them to send "not drowning" state
     for _, remote in pairs(foundRemotes) do
         pcall(function()
             local originalFire = remote.FireServer
             remote.FireServer = function(self, ...)
                 local args = {...}
                 
+                -- Modify any drown-related arguments
                 for i, arg in ipairs(args) do
                     if type(arg) == "number" and arg > 0 then
-                        args[i] = 0
+                        args[i] = 0 -- Set drown percent to 0
                     elseif type(arg) == "boolean" then
-                        args[i] = false
+                        args[i] = false -- Set "isDrowning" to false
                     end
                 end
                 
-                return originalFire(self, table.unpack(args))
+                return originalFire(self, unpack(args))
             end
-            print("[HOOK] Network spoof active for: " .. remote.Name)
+            print("[HOOK] Network spoof active for:", remote.Name)
         end)
     end
 end
@@ -131,6 +142,7 @@ end
 -- ============================================
 
 local function hookCriticalFunctions()
+    -- Try to load DrownUtils module
     local DrownUtils
     pcall(function()
         local drownFolder = ReplicatedStorage:FindFirstChild("Drown")
@@ -143,6 +155,7 @@ local function hookCriticalFunctions()
     end)
     
     if DrownUtils then
+        -- Hook getDrownPercent to always return 0 for local player
         if DrownUtils.getDrownPercent then
             local original = DrownUtils.getDrownPercent
             DrownUtils.getDrownPercent = function(player)
@@ -154,6 +167,7 @@ local function hookCriticalFunctions()
             print("[HOOK] getDrownPercent spoofed")
         end
         
+        -- Hook getIsPlayerDrowning to always return false
         if DrownUtils.getIsPlayerDrowning then
             local original = DrownUtils.getIsPlayerDrowning
             DrownUtils.getIsPlayerDrowning = function(player)
@@ -173,24 +187,28 @@ end
 
 print("\n=== DEPLOYING SYSTEMS ===")
 
+-- 1. First, find the validation interval
 print("1. Finding server validation interval...")
 print("   Jump in water and note the damage timing.")
 
-task.spawn(function()
-    task.wait(15)
+-- 2. Once we know the interval, deploy timing attack
+spawn(function()
+    wait(15) -- Give time to measure interval
     if validationInterval then
-        print("\n2. Deploying timing attack (interval: " .. string.format("%.2f", validationInterval) .. "s)...")
+        print(string.format("\n2. Deploying timing attack (interval: %.2fs)...", validationInterval))
         timingAttackLoop()
     else
         print("\n2. No interval found yet - will deploy when detected")
+        -- Keep checking
         while not validationInterval do
-            task.wait(1)
+            wait(1)
         end
-        print("   Interval found: " .. string.format("%.2f", validationInterval) .. "s - deploying attack")
+        print(string.format("   Interval found: %.2fs - deploying attack", validationInterval))
         timingAttackLoop()
     end
 end)
 
+-- 3. Deploy other systems immediately
 print("3. Deploying network spoofing...")
 pcall(spoofNetworkState)
 
@@ -206,8 +224,9 @@ print("   - Reset messages (should beat damage)")
 print("4. If damage stops, SUCCESS!")
 print("5. If damage continues, adjust reset timing")
 
-task.spawn(function()
-    task.wait(30)
+-- Auto-analysis after 30 seconds
+spawn(function()
+    wait(30)
     print("\n=== 30-SECOND ANALYSIS ===")
     
     if #damageLog == 0 then
@@ -215,16 +234,16 @@ task.spawn(function()
     elseif #damageLog == 1 then
         print("⚠️ Single damage instance - server may do initial check")
     else
-        print("📊 " .. tostring(#damageLog) .. " damage instances")
+        print(string.format("📊 %d damage instances", #damageLog))
         if validationInterval then
-            print("   Server validates every " .. string.format("%.2f", validationInterval) .. " seconds")
+            print(string.format("   Server validates every %.2f seconds", validationInterval))
             
+            -- Calculate success rate
             local expectedChecks = 30 / validationInterval
             local actualDamage = #damageLog
-            -- FIXED: Closed the math parenthesis correctly here
             local successRate = (1 - (actualDamage / expectedChecks)) * 100
             
-            print("   Bypass success rate: " .. string.format("%.1f", successRate) .. "%")
+            print(string.format("   Bypass success rate: %.1f%%", successRate))
             
             if successRate > 80 then
                 print("   🎉 EXCELLENT - Timing attack working!")
