@@ -4,178 +4,86 @@ local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 
 -- =============================================
--- TIER 1: HOOK ALL DROWN-RELATED FUNCTIONS
+-- 1. THE VOXEL & RAYCAST SPOOFER
 -- =============================================
-local hookedFunctions = {}
+-- This targets the exact logic in your DrownUtils source
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+local oldIndex = mt.__index
+setreadonly(mt, false)
 
-local function safeHook(module, functionName, replacement)
-    if not module then return false end
-    local original = module[functionName]
-    if not original then return false end
-    hookedFunctions[functionName] = original
-    module[functionName] = replacement
-    return true
-end
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
 
--- Load modules safely
-local DrownUtils, DrownConsts
-for i = 1, 5 do
-    local success1, result1 = pcall(require, ReplicatedStorage:WaitForChild("Drown", 2):WaitForChild("DrownUtils", 2))
-    local success2, result2 = pcall(require, ReplicatedStorage:WaitForChild("Drown", 2):WaitForChild("DrownConsts", 2))
-    if success1 then DrownUtils = result1 end
-    if success2 then DrownConsts = result2 end
-    if DrownUtils and DrownConsts then break end
-    task.wait(0.5)
-end
-
-if DrownUtils then
-    -- Hook 1: Always report 0% drowning
-    safeHook(DrownUtils, "getDrownPercent", function(player)
-        if player == localPlayer then return 0 end
-        return hookedFunctions.getDrownPercent(player)
-    end)
-
-    -- Hook 2: Never appear to be drowning
-    safeHook(DrownUtils, "getIsPlayerDrowning", function(player)
-        if player == localPlayer then return false end
-        return hookedFunctions.getIsPlayerDrowning(player)
-    end)
-    print("✓ Core functions hooked")
-end
-
--- =============================================
--- TIER 2: CONTINUOUS ATTRIBUTE RESETTING
--- =============================================
-local function continuousAttributeReset()
-    local lastReset = tick()
-    RunService.Heartbeat:Connect(function()
-        local character = localPlayer.Character
-        if not character then return end
-        local head = character:FindFirstChild("Head")
-        if not head then return end
-
-        if head.Position.Y < 180 then 
-            if tick() - lastReset > 0.05 then
-                pcall(function()
-                    localPlayer:SetAttribute("DrownPercent", 0)
-                    if DrownUtils and DrownUtils.setDrownPercent then
-                        DrownUtils.setDrownPercent(localPlayer, 0)
+    -- Hook ReadVoxels: The game uses this to find Water voxels
+    if method == "ReadVoxels" and self == workspace.Terrain then
+        local material, occupancy = oldNamecall(self, ...)
+        
+        -- We loop through the returned voxel data and swap Water for Air
+        for x = 1, material.Size.X do
+            for y = 1, material.Size.Y do
+                for z = 1, material.Size.Z do
+                    if material[x][y][z] == Enum.Material.Water then
+                        material[x][y][z] = Enum.Material.Air
                     end
-                end)
-                lastReset = tick()
+                end
             end
         end
-    end)
-end
-task.spawn(continuousAttributeReset)
+        return material, occupancy
+    end
 
--- =============================================
--- TIER 3: POSITION SPOOFING (FIXED)
--- =============================================
-local function positionSpoofing()
-    RunService.Heartbeat:Connect(function()
-        local character = localPlayer.Character
-        if not character then return end
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        if not humanoidRootPart then return end
-
-        if humanoidRootPart.Position.Y < 180 then
-            pcall(function()
-                -- Attempt to push velocity up to counteract sinking
-                humanoidRootPart.Velocity = Vector3.new(0, 5, 0)
-                
-                -- Note: SetNetworkOwner is usually server-side, 
-                -- but included here to match your original logic.
-                if humanoidRootPart.SetNetworkOwner then
-                    -- humanoidRootPart:SetNetworkOwner(localPlayer) 
-                end
-            end)
-        end -- Added missing 'end' for the IF statement
-    end)
-end
-task.spawn(positionSpoofing)
-
--- =============================================
--- TIER 4: PACKET MANIPULATION
--- =============================================
-local function interceptDrownPackets()
-    for _, child in pairs(ReplicatedStorage:GetDescendants()) do
-        if child:IsA("RemoteEvent") and (child.Name:find("Drown") or child.Name:find("Water")) then
-            print("Found drown-related RemoteEvent:", child:GetFullName())
-            local originalFire = child.FireServer
-            child.FireServer = function(self, ...)
-                local args = {...}
-                for i, arg in ipairs(args) do
-                    if type(arg) == "number" and (arg > 0 and arg <= 1) then
-                        args[i] = 0
-                    end
-                end
-                return originalFire(self, table.unpack(args))
-            end
+    -- Hook Raycast: The game uses this as a secondary check
+    if method == "Raycast" or method == "FindPartOnRayWithIgnoreList" then
+        local result = oldNamecall(self, ...)
+        if result and result.Material == Enum.Material.Water then
+            -- Tell the game we hit nothing (nil) instead of water
+            return nil
         end
     end
-end
 
-if pcall(function() return getrawmetatable(game) end) then
-    task.spawn(interceptDrownPackets)
-end
+    return oldNamecall(self, table.unpack(args))
+end)
+
+setreadonly(mt, true)
 
 -- =============================================
--- TIER 5: VISUAL CLEANUP
+-- 2. ATTRIBUTE LOCKER
 -- =============================================
-local function removeVisualEffects()
-    while true do
-        task.wait(0.5)
-        local character = localPlayer.Character
-        if character then
-            local head = character:FindFirstChild("Head")
-            if head then
-                for _, child in pairs(head:GetChildren()) do
-                    if child:IsA("ParticleEmitter") then
-                        child:Destroy()
-                    end
-                end
-            end
+-- DrownConsts shows the attribute name is "DrownPercent"
+-- We lock this to 0 locally so the UI never shows the blue bar.
+RunService.Heartbeat:Connect(function()
+    if localPlayer:GetAttribute("DrownPercent") ~= 0 then
+        localPlayer:SetAttribute("DrownPercent", 0)
+    end
+end)
 
-            local playerGui = localPlayer:FindFirstChild("PlayerGui")
-            if playerGui then
-                local drownGui = playerGui:FindFirstChild("DrownGui")
-                if drownGui then
-                    drownGui.Enabled = false
+-- =============================================
+-- 3. PARTICLE & UI CLEANUP
+-- =============================================
+-- This stops the "AirBubbles" particles from appearing on your head
+local function CleanEffects()
+    local char = localPlayer.Character
+    if char then
+        local head = char:FindFirstChild("Head")
+        if head then
+            for _, v in pairs(head:GetChildren()) do
+                if v.Name == "AirBubbles" then
+                    v:Destroy()
                 end
             end
         end
-    end
-end
-task.spawn(removeVisualEffects)
-
--- =============================================
--- TEST SUITE
--- =============================================
-local function runTest()
-    print("\n🧪 Starting 30-second underwater test...")
-    local character = localPlayer.Character
-    if not character or not character:FindFirstChild("Humanoid") then 
-        print("❌ Test failed: Character not found")
-        return 
     end
     
-    local startHealth = character.Humanoid.Health
-    local startTime = tick()
-
-    while tick() - startTime < 30 do
-        task.wait(1)
-        if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health < startHealth then
-            print("❌ Damage detected at " .. math.floor(tick() - startTime) .. " seconds!")
-            return false
+    local pg = localPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        local drownGui = pg:FindFirstChild("DrownGui")
+        if drownGui then
+            drownGui.Enabled = false
         end
     end
-    print("✓ No damage for 30 seconds!")
-    return true
 end
 
-print("========================================")
-print("DROWN PROTECTION ACTIVE")
-print("========================================")
-task.wait(2)
-task.spawn(runTest)
+RunService.RenderStepped:Connect(CleanEffects)
+
+print("--- [BYPASS ACTIVE] DrownUtils Logic Spoofed ---")
