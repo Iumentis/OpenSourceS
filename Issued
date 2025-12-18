@@ -1,0 +1,242 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local localPlayer = Players.LocalPlayer
+
+print("=== PURE TIMING ATTACK DROWN BYPASS ===")
+
+-- ============================================
+-- PHASE 1: FIND THE EXACT VALIDATION INTERVAL
+-- ============================================
+
+local damageLog = {}
+local lastHealth = 100
+local validationInterval = nil
+
+RunService.Heartbeat:Connect(function()
+    local char = localPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        local humanoid = char.Humanoid
+        local currentHealth = humanoid.Health
+        
+        if currentHealth < lastHealth then
+            local damage = lastHealth - currentHealth
+            local timeNow = tick()
+            
+            table.insert(damageLog, {
+                time = timeNow,
+                damage = damage,
+                position = char:GetPivot().Position
+            })
+            
+            print("[DAMAGE] Lost " .. tostring(damage) .. " health at " .. tostring(timeNow) .. " seconds")
+            
+            if #damageLog >= 2 then
+                local interval = damageLog[#damageLog].time - damageLog[#damageLog-1].time
+                validationInterval = interval
+                print("[INTERVAL] Server validates every " .. string.format("%.2f", interval) .. " seconds")
+                
+                if math.abs(interval - 8) < 0.5 then
+                    print("[CRITICAL] Found 8-second validation window!")
+                end
+            end
+        end
+        
+        lastHealth = currentHealth
+    end
+end)
+
+-- ============================================
+-- PHASE 2: BEAT THE VALIDATION WINDOW
+-- ============================================
+
+local lastReset = tick()
+local resetCount = 0
+
+local function timingAttackLoop()
+    RunService.Heartbeat:Connect(function()
+        if not validationInterval then return end
+        
+        local currentTime = tick()
+        local timeSinceReset = currentTime - lastReset
+        local resetThreshold = validationInterval - 0.3
+        
+        if timeSinceReset > resetThreshold then
+            pcall(function()
+                localPlayer:SetAttribute("DrownPercent", 0)
+                
+                for _, attr in pairs({"DrownTimer", "IsDrowning", "WaterTime"}) do
+                    pcall(function()
+                        localPlayer:SetAttribute(attr, 0)
+                    end)
+                end
+                
+                resetCount = resetCount + 1
+                -- Fixed string conversion here
+                local timeBeaten = validationInterval - timeSinceReset
+                print("[RESET #" .. tostring(resetCount) .. "] Beat server check by " .. string.format("%.1f", timeBeaten) .. "s")
+                
+                lastReset = currentTime
+            end)
+        end
+    end)
+end
+
+-- ============================================
+-- PHASE 3: NETWORK STATE SPOOFING
+-- ============================================
+
+local function spoofNetworkState()
+    local foundRemotes = {}
+    
+    local function scanRemotes(parent)
+        for _, child in pairs(parent:GetChildren()) do
+            if child:IsA("RemoteEvent") then
+                local nameLower = child.Name:lower()
+                if nameLower:find("drown") or nameLower:find("water") or nameLower:find("breath") then
+                    table.insert(foundRemotes, child)
+                    print("[REMOTE] Found: " .. child:GetFullName())
+                end
+            end
+            pcall(function() scanRemotes(child) end)
+        end
+    end
+    
+    scanRemotes(ReplicatedStorage)
+    scanRemotes(workspace)
+    
+    for _, remote in pairs(foundRemotes) do
+        pcall(function()
+            local originalFire = remote.FireServer
+            remote.FireServer = function(self, ...)
+                local args = {...}
+                
+                for i, arg in ipairs(args) do
+                    if type(arg) == "number" and arg > 0 then
+                        args[i] = 0
+                    elseif type(arg) == "boolean" then
+                        args[i] = false
+                    end
+                end
+                
+                return originalFire(self, table.unpack(args))
+            end
+            print("[HOOK] Network spoof active for: " .. remote.Name)
+        end)
+    end
+end
+
+-- ============================================
+-- PHASE 4: MEMORY & FUNCTION HOOKING
+-- ============================================
+
+local function hookCriticalFunctions()
+    local DrownUtils
+    pcall(function()
+        local drownFolder = ReplicatedStorage:FindFirstChild("Drown")
+        if drownFolder then
+            local utils = drownFolder:FindFirstChild("DrownUtils")
+            if utils then
+                DrownUtils = require(utils)
+            end
+        end
+    end)
+    
+    if DrownUtils then
+        if DrownUtils.getDrownPercent then
+            local original = DrownUtils.getDrownPercent
+            DrownUtils.getDrownPercent = function(player)
+                if player == localPlayer then
+                    return 0
+                end
+                return original(player)
+            end
+            print("[HOOK] getDrownPercent spoofed")
+        end
+        
+        if DrownUtils.getIsPlayerDrowning then
+            local original = DrownUtils.getIsPlayerDrowning
+            DrownUtils.getIsPlayerDrowning = function(player)
+                if player == localPlayer then
+                    return false
+                end
+                return original(player)
+            end
+            print("[HOOK] getIsPlayerDrowning spoofed")
+        end
+    end
+end
+
+-- ============================================
+-- DEPLOYMENT
+-- ============================================
+
+print("\n=== DEPLOYING SYSTEMS ===")
+
+print("1. Finding server validation interval...")
+print("   Jump in water and note the damage timing.")
+
+task.spawn(function()
+    task.wait(15)
+    if validationInterval then
+        print("\n2. Deploying timing attack (interval: " .. string.format("%.2f", validationInterval) .. "s)...")
+        timingAttackLoop()
+    else
+        print("\n2. No interval found yet - will deploy when detected")
+        while not validationInterval do
+            task.wait(1)
+        end
+        print("   Interval found: " .. string.format("%.2f", validationInterval) .. "s - deploying attack")
+        timingAttackLoop()
+    end
+end)
+
+print("3. Deploying network spoofing...")
+pcall(spoofNetworkState)
+
+print("4. Deploying function hooks...")
+pcall(hookCriticalFunctions)
+
+print("\n=== TEST PROTOCOL ===")
+print("1. Enter deep water")
+print("2. Wait 20+ seconds")
+print("3. Monitor console for:")
+print("   - Damage intervals (should be consistent)")
+print("   - Reset messages (should beat damage)")
+print("4. If damage stops, SUCCESS!")
+print("5. If damage continues, adjust reset timing")
+
+task.spawn(function()
+    task.wait(30)
+    print("\n=== 30-SECOND ANALYSIS ===")
+    
+    if #damageLog == 0 then
+        print("✅ NO DAMAGE TAKEN - BYPASS SUCCESSFUL!")
+    elseif #damageLog == 1 then
+        print("⚠️ Single damage instance - server may do initial check")
+    else
+        print("📊 " .. tostring(#damageLog) .. " damage instances")
+        if validationInterval then
+            print("   Server validates every " .. string.format("%.2f", validationInterval) .. " seconds")
+            
+            local expectedChecks = 30 / validationInterval
+            local actualDamage = #damageLog
+            -- FIXED: Closed the math parenthesis correctly here
+            local successRate = (1 - (actualDamage / expectedChecks)) * 100
+            
+            print("   Bypass success rate: " .. string.format("%.1f", successRate) .. "%")
+            
+            if successRate > 80 then
+                print("   🎉 EXCELLENT - Timing attack working!")
+            elseif successRate > 50 then
+                print("   ⚠️ PARTIAL - Adjust reset timing")
+            else
+                print("   ❌ NEEDS WORK - Try different approach")
+            end
+        end
+    end
+end)
+
+print("\n=== READY ===")
+print("This is PURE timing/network exploitation.")
+print("NO position manipulation - just beating server checks!")
