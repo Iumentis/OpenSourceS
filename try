@@ -1,506 +1,364 @@
--- PROPER BYTECODE ANALYZER - Handles C/Lua closures correctly
-local BytecodeAnalyzer = {}
-BytecodeAnalyzer.__index = BytecodeAnalyzer
+-- BYTECODE PATTERN DECODER - Attempts to decode common patterns
+local BytecodeDecoder = {}
+BytecodeDecoder.__index = BytecodeDecoder
 
-function BytecodeAnalyzer.new()
-    local self = setmetatable({}, BytecodeAnalyzer)
+function BytecodeDecoder.new()
+    local self = setmetatable({}, BytecodeDecoder)
     
-    self.gameKeywords = {
-        "Gun", "Knife", "Shoot", "Fire", "Bullet", "Ammo", "Reload",
-        "Damage", "Hit", "Kill", "Murder", "Sheriff", "Trade", "Offer",
-        "Round", "Role", "Coin", "XP", "Level", "Prestige", "Event"
+    -- Common Luau instruction patterns (REVERSE-ENGINEERED, may be wrong!)
+    self.opcodePatterns = {
+        -- Format: {hex_pattern, possible_meaning}
+        ["1B4C7561"] = {"Luau signature", "SCRIPT_HEADER"},
+        ["00..02..04"] = {"Function header", "FUNC_START"},
+        ["2A......"] = {"LOADK - Load constant", "local x = K"},
+        ["36......"] = {"GETGLOBAL - Get global", "game"},
+        ["3C......"] = {"SETGLOBAL - Set global", "x = value"},
+        ["42......"] = {"GETTABLE - Table access", "x.y or x[y]"},
+        ["48......"] = {"SETTABLE - Table write", "x.y = z"},
+        ["4E......"] = {"NEWTABLE - Create table", "{}"},
+        ["54......"] = {"SELF - Method call prep", "x:method()"},
+        ["5A......"] = {"ADD - Addition", "a + b"},
+        ["60......"] = {"SUB - Subtraction", "a - b"},
+        ["66......"] = {"MUL - Multiplication", "a * b"},
+        ["6C......"] = {"DIV - Division", "a / b"},
+        ["72......"] = {"CONCAT - String concat", "a .. b"},
+        ["78......"] = {"CALL - Function call", "func()"},
+        ["7E......"] = {"RETURN - Return", "return x"},
+        ["84......"] = {"JUMP - Unconditional jump", "goto"},
+        ["8A......"] = {"EQ - Equal compare", "a == b"},
+        ["90......"] = {"LT - Less than", "a < b"},
+        ["96......"] = {"LE - Less or equal", "a <= b"},
+        ["9C......"] = {"TEST - Boolean test", "if x then"},
+        ["A2......"] = {"TESTSET - Test and set", "x = y or z"},
+        ["A8......"] = {"FORLOOP - For loop", "for i = 1,10"},
+        ["AE......"] = {"TFORLOOP - Generic for", "for k,v in pairs"},
+        ["B4......"] = {"CLOSURE - Create function", "function() end"},
+    }
+    
+    -- Common constant patterns
+    self.constantPatterns = {
+        ["00"] = "nil",
+        ["01"] = "false", 
+        ["02"] = "true",
+        ["03......"] = "number",  -- Followed by float bytes
+        ["04......"] = "string",  -- Followed by length + chars
     }
     
     return self
 end
 
--- Safe debug.getinfo that works with C closures
-function BytecodeAnalyzer:safeGetInfo(closure)
-    if not closure then return nil end
-    
-    -- Check if it's a C closure (which debug.getinfo can't handle well)
-    local isC = false
-    if iscclosure then
-        isC = iscclosure(closure)
+-- Attempt to decode bytecode hex
+function BytecodeDecoder:decodeBytecode(hex)
+    if not hex or #hex < 10 then
+        return {"-- Bytecode too short"}
     end
     
-    local info = {}
-    
-    if not isC then
-        -- Lua closure - we can use debug.getinfo
-        local success, result = pcall(debug.getinfo, closure)
-        if success then
-            info = result or {}
-        end
-    else
-        -- C closure - minimal info
-        info.what = "C"
-        info.source = "[C]"
-    end
-    
-    -- Add type info if available
-    if islclosure then
-        info.lclosure = islclosure(closure)
-    end
-    if iscclosure then
-        info.cclosure = iscclosure(closure)
-    end
-    
-    return info
-end
-
--- Extract constants safely
-function BytecodeAnalyzer:extractConstants(closure)
     local output = {}
+    table.insert(output, "🔐 ATTEMPTING BYTECODE DECODING")
+    table.insert(output, "Length: " .. #hex .. " hex chars (" .. math.floor(#hex/2) .. " bytes)")
+    table.insert(output, "")
     
-    if not closure then
-        table.insert(output, "-- No closure provided")
-        return output
+    -- Check for Luau header
+    local header = hex:sub(1, 8)
+    if header == "1B4C7561" then
+        table.insert(output, "✅ Luau bytecode signature found")
+    else
+        table.insert(output, "⚠️  Unknown header: " .. header)
+    end
+    table.insert(output, "")
+    
+    -- Try to identify patterns
+    table.insert(output, "🔍 PATTERN ANALYSIS:")
+    
+    local patternsFound = {}
+    
+    -- Scan for known opcode patterns
+    for pattern, info in pairs(self.opcodePatterns) do
+        local pos = 1
+        while pos do
+            pos = hex:find(pattern, pos)
+            if pos then
+                local context = hex:sub(math.max(1, pos-16), math.min(#hex, pos+32))
+                table.insert(patternsFound, {
+                    position = pos,
+                    pattern = pattern,
+                    meaning = info[2],
+                    context = context
+                })
+                pos = pos + 1
+            end
+        end
     end
     
-    local success, constants = pcall(debug.getconstants, closure)
-    if not success or not constants then
-        table.insert(output, "-- Could not extract constants")
-        return output
-    end
+    -- Sort by position
+    table.sort(patternsFound, function(a, b)
+        return a.position < b.position
+    end)
     
-    table.insert(output, "📦 CONSTANTS FOUND: " .. #constants)
-    
-    -- Group by type and highlight game keywords
-    local gameStrings = {}
-    local otherStrings = {}
-    local numbers = {}
-    
-    for i = 1, math.min(50, #constants) do  -- Limit to 50
-        local const = constants[i]
-        local constType = type(const)
+    -- Show top patterns
+    for i = 1, math.min(15, #patternsFound) do
+        local p = patternsFound[i]
+        table.insert(output, string.format("  [0x%06X] %-20s → %s", 
+            p.position, p.pattern, p.meaning))
         
-        if constType == "string" and #const > 0 and #const < 50 then
-            -- Check if it's game-related
-            local isGame = false
-            for _, keyword in ipairs(self.gameKeywords) do
-                if const:find(keyword) then
-                    isGame = true
+        -- Show context for interesting patterns
+        if p.meaning:find("LOAD") or p.meaning:find("CALL") or p.meaning:find("JUMP") then
+            table.insert(output, string.format("        Context: %s", p.context))
+        end
+    end
+    
+    if #patternsFound == 0 then
+        table.insert(output, "  No known patterns found")
+    end
+    table.insert(output, "")
+    
+    -- Extract string constants more aggressively
+    table.insert(output, "🔤 STRING EXTRACTION ATTEMPT:")
+    
+    local stringsFound = {}
+    
+    -- Method 1: Look for string length patterns (04 followed by length in hex)
+    for i = 1, #hex - 6, 2 do
+        if hex:sub(i, i+1) == "04" then  -- String marker
+            -- Next 4 bytes might be length (little-endian)
+            local lenHex = hex:sub(i+2, i+9)
+            local length = tonumber(lenHex:sub(7,8) .. lenHex:sub(5,6) .. lenHex:sub(3,4) .. lenHex:sub(1,2), 16)
+            
+            if length and length > 0 and length < 100 then
+                -- Try to extract the string
+                local strStart = i + 10
+                local strEnd = strStart + (length * 2) - 1
+                
+                if strEnd <= #hex then
+                    local strHex = hex:sub(strStart, strEnd)
+                    local str = self:hexToString(strHex)
+                    
+                    if #str == length then  -- Valid extraction
+                        table.insert(stringsFound, {
+                            position = i,
+                            length = length,
+                            value = str
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Method 2: Look for ASCII sequences directly
+    local asciiStrings = self:extractASCIIStrings(hex)
+    for _, str in ipairs(asciiStrings) do
+        if #str.value >= 3 then
+            table.insert(stringsFound, str)
+        end
+    end
+    
+    -- Remove duplicates
+    local uniqueStrings = {}
+    for _, str in ipairs(stringsFound) do
+        uniqueStrings[str.value] = str
+    end
+    
+    -- Display found strings
+    local sortedStrings = {}
+    for _, str in pairs(uniqueStrings) do
+        table.insert(sortedStrings, str)
+    end
+    
+    table.sort(sortedStrings, function(a, b)
+        return #a.value > #b.value  -- Longest first
+    end)
+    
+    for i = 1, math.min(20, #sortedStrings) do
+        local str = sortedStrings[i]
+        table.insert(output, string.format("  [0x%06X] %-3d chars: \"%s\"", 
+            str.position, #str.value, str.value))
+    end
+    
+    if #sortedStrings == 0 then
+        table.insert(output, "  No strings extracted")
+    end
+    table.insert(output, "")
+    
+    -- Attempt to reconstruct some code structure
+    table.insert(output, "🏗️  CODE STRUCTURE GUESS:")
+    
+    local guesses = {}
+    
+    -- Look for function call patterns
+    if hex:find("78......") then  -- CALL opcode
+        -- Check what comes before the call (might be what's being called)
+        for pos in hex:gmatch("()78......") do
+            local before = hex:sub(math.max(1, pos-20), pos-1)
+            
+            -- Try to find a string before the call
+            for _, str in ipairs(sortedStrings) do
+                if str.position < pos and pos - str.position < 50 then
+                    table.insert(guesses, "CALL: " .. str.value .. "()")
                     break
                 end
             end
-            
-            if const:match("^[%a_][%w_]*$") then  -- Valid identifier
-                if isGame then
-                    table.insert(gameStrings, {index = i, value = const})
-                else
-                    table.insert(otherStrings, {index = i, value = const})
-                end
-            end
-            
-        elseif constType == "number" then
-            -- Only show interesting numbers
-            if const == 0 or const == 1 or const == 100 or const == 1000 or 
-               const == -1 or const == 0.5 or const == 0.25 or const == 16 then
-                table.insert(numbers, {index = i, value = const})
-            end
         end
     end
     
-    -- Output game strings first (most important)
-    if #gameStrings > 0 then
-        table.insert(output, "")
-        table.insert(output, "🎯 GAME-RELATED STRINGS:")
-        for _, item in ipairs(gameStrings) do
-            table.insert(output, string.format("  [%3d] \"%s\"", item.index, item.value))
+    -- Look for table access
+    if hex:find("42......") then  -- GETTABLE
+        table.insert(guesses, "Table access: x.y or x[y]")
+    end
+    
+    -- Look for loops
+    if hex:find("A8......") then  -- FORLOOP
+        table.insert(guesses, "For loop: for i = ...")
+    end
+    
+    -- Look for comparisons
+    if hex:find("8A......") or hex:find("90......") or hex:find("96......") then
+        table.insert(guesses, "Comparison: a == b or a < b")
+    end
+    
+    -- Display guesses
+    if #guesses > 0 then
+        for i, guess in ipairs(guesses) do
+            table.insert(output, "  • " .. guess)
         end
-    end
-    
-    -- Other strings
-    if #otherStrings > 0 then
-        table.insert(output, "")
-        table.insert(output, "🔤 OTHER IDENTIFIERS:")
-        for i = 1, math.min(10, #otherStrings) do  -- Limit others
-            local item = otherStrings[i]
-            table.insert(output, string.format("  [%3d] \"%s\"", item.index, item.value))
-        end
-        if #otherStrings > 10 then
-            table.insert(output, string.format("  ... and %d more", #otherStrings - 10))
-        end
-    end
-    
-    -- Numbers
-    if #numbers > 0 then
-        table.insert(output, "")
-        table.insert(output, "🔢 NUMBERS:")
-        for _, item in ipairs(numbers) do
-            table.insert(output, string.format("  [%3d] %s", item.index, tostring(item.value)))
-        end
-    end
-    
-    -- Count other types
-    local boolCount, nilCount = 0, 0
-    for i = 1, math.min(50, #constants) do
-        local const = constants[i]
-        if type(const) == "boolean" then boolCount = boolCount + 1 end
-        if const == nil then nilCount = nilCount + 1 end
-    end
-    
-    if boolCount > 0 then
-        table.insert(output, "")
-        table.insert(output, "🔘 BOOLEANS: " .. boolCount)
-    end
-    
-    if nilCount > 0 then
-        table.insert(output, "")
-        table.insert(output, "◻️  NILS: " .. nilCount)
+    else
+        table.insert(output, "  Could not guess code structure")
     end
     
     return output
 end
 
--- Analyze bytecode hex for strings
-function BytecodeAnalyzer:scanBytecodeForStrings(bytecode)
-    if not bytecode or #bytecode < 20 then
-        return {"-- Bytecode too short or missing"}
+-- Convert hex to ASCII string
+function BytecodeDecoder:hexToString(hex)
+    local str = ""
+    for i = 1, #hex, 2 do
+        local byteHex = hex:sub(i, i+1)
+        local byte = tonumber(byteHex, 16)
+        if byte and byte >= 32 and byte <= 126 then
+            str = str .. string.char(byte)
+        else
+            return str  -- Stop at first non-ASCII
+        end
     end
+    return str
+end
+
+-- Extract ASCII strings from hex
+function BytecodeDecoder:extractASCIIStrings(hex)
+    local strings = {}
+    local i = 1
     
-    local output = {}
-    local found = {}
-    
-    -- Look for ASCII strings in hex (pairs of hex digits)
-    for i = 1, #bytecode - 3, 2 do
-        local startHex = bytecode:sub(i, i+1)
-        local startDec = tonumber(startHex, 16)
-        
-        if startDec and startDec >= 65 and startDec <= 90 then  -- A-Z
-            -- Try to read a string
-            local str = ""
+    while i <= #hex do
+        -- Look for start of ASCII sequence
+        if tonumber(hex:sub(i, i+1), 16) and tonumber(hex:sub(i, i+1), 16) >= 65 then  -- A or higher
+            local start = i
+            local strHex = ""
             local valid = true
-            local j = i
             
-            while valid and j <= #bytecode - 1 and #str < 30 do
-                local hexPair = bytecode:sub(j, j+1)
-                local dec = tonumber(hexPair, 16)
-                
-                if dec and dec >= 32 and dec <= 126 then  -- Printable ASCII
-                    str = str .. string.char(dec)
-                    j = j + 2
+            -- Collect consecutive ASCII characters
+            while valid and i <= #hex - 1 do
+                local byte = tonumber(hex:sub(i, i+1), 16)
+                if byte and byte >= 32 and byte <= 126 then
+                    strHex = strHex .. hex:sub(i, i+1)
+                    i = i + 2
                 else
                     valid = false
                 end
             end
             
-            if #str >= 3 and #str <= 25 then
-                -- Check if it looks like code/identifier
-                if str:match("^[%a_][%w_]*$") and not str:match("^%x+$") then
-                    if not found[str] then
-                        found[str] = true
-                        
-                        -- Check if game-related
-                        local isGame = false
-                        for _, keyword in ipairs(self.gameKeywords) do
-                            if str:find(keyword) then
-                                isGame = true
-                                break
-                            end
-                        end
-                        
-                        if isGame then
-                            table.insert(output, "🎯 \"" .. str .. "\"")
-                        elseif str:find("^[A-Z]") then  -- PascalCase
-                            table.insert(output, "  \"" .. str .. "\"")
-                        end
-                    end
+            if #strHex >= 6 then  -- At least 3 characters
+                local str = self:hexToString(strHex)
+                if #str >= 3 then
+                    table.insert(strings, {
+                        position = start,
+                        value = str
+                    })
                 end
             end
+        else
+            i = i + 2
         end
     end
     
-    if #output == 0 then
-        table.insert(output, "-- No readable strings found in bytecode")
-    end
-    
-    return output
+    return strings
 end
 
--- Main analysis for a single script
-function BytecodeAnalyzer:analyzeScript(script)
+-- Analyze a specific script with decoding
+function BytecodeDecoder:analyzeWithDecoding(script)
     local output = {}
     
-    table.insert(output, "=" .. string.rep("=", 50))
-    table.insert(output, "🔍 ANALYZING: " .. script:GetFullName())
-    table.insert(output, "Type: " .. script.ClassName)
-    table.insert(output, "=" .. string.rep("=", 50))
+    table.insert(output, "=" .. string.rep("=", 60))
+    table.insert(output, "🔐 BYTECODE DECODING ATTEMPT")
+    table.insert(output, "Script: " .. script:GetFullName())
+    table.insert(output, "=" .. string.rep("=", 60))
     table.insert(output, "")
     
-    -- 1. Try to get bytecode
+    -- Get bytecode
     local bytecodeSuccess, bytecode = pcall(getscriptbytecode, script)
-    if bytecodeSuccess and bytecode then
-        table.insert(output, "📊 BYTECODE INFO:")
-        table.insert(output, "  Size: " .. #bytecode .. " bytes")
-        table.insert(output, "")
-        
-        -- Scan for strings in bytecode
-        local bytecodeStrings = self:scanBytecodeForStrings(bytecode)
-        if #bytecodeStrings > 0 then
-            table.insert(output, "🔤 STRINGS IN BYTECODE:")
-            for _, line in ipairs(bytecodeStrings) do
-                table.insert(output, "  " .. line)
-            end
-            table.insert(output, "")
-        end
-        
-        -- Show hex preview
-        table.insert(output, "🔢 HEX PREVIEW (first 100 chars):")
-        local preview = bytecode:sub(1, 100)
-        if #bytecode > 100 then preview = preview .. "..." end
-        table.insert(output, "  " .. preview)
-        table.insert(output, "")
-    else
-        table.insert(output, "📊 BYTECODE: Not available")
-        table.insert(output, "")
+    if not bytecodeSuccess or not bytecode then
+        table.insert(output, "❌ Could not get bytecode")
+        return table.concat(output, "\n")
     end
     
-    -- 2. Try to get closure
-    local closureSuccess, closure = pcall(getscriptclosure, script)
-    if closureSuccess and closure then
-        table.insert(output, "⚙️ CLOSURE ANALYSIS:")
-        
-        -- Get closure type
-        if iscclosure and islclosure then
-            if iscclosure(closure) then
-                table.insert(output, "  Type: C Closure")
-            elseif islclosure(closure) then
-                table.insert(output, "  Type: Lua Closure")
-            end
-        end
-        
-        -- Extract constants
-        local constantsOutput = self:extractConstants(closure)
-        for _, line in ipairs(constantsOutput) do
-            table.insert(output, line)
-        end
-        table.insert(output, "")
-        
-        -- Try to get some debug info (safely)
-        local info = self:safeGetInfo(closure)
-        if info and (info.source or info.what) then
-            table.insert(output, "📝 DEBUG INFO:")
-            if info.source and info.source ~= "[C]" then
-                table.insert(output, "  Source: " .. info.source)
-            end
-            if info.what then
-                table.insert(output, "  What: " .. info.what)
-            end
-            if info.currentline then
-                table.insert(output, "  Line: " .. info.currentline)
-            end
-            table.insert(output, "")
-        end
-        
-    else
-        table.insert(output, "⚙️ CLOSURE: Not available")
-        table.insert(output, "")
+    -- Try to decode
+    local decoded = self:decodeBytecode(bytecode)
+    for _, line in ipairs(decoded) do
+        table.insert(output, line)
     end
     
-    -- 3. For ModuleScripts, show source
-    if script:IsA("ModuleScript") and script.Source and #script.Source > 0 then
-        table.insert(output, "📄 SOURCE CODE PREVIEW:")
-        table.insert(output, string.rep("-", 40))
-        
-        -- Count lines and show first 10
-        local lineCount = 0
-        for _ in script.Source:gmatch("\n") do
-            lineCount = lineCount + 1
-        end
-        lineCount = lineCount + 1  -- Add last line
-        
-        table.insert(output, "  Total lines: " .. lineCount)
-        table.insert(output, "  Total chars: " .. #script.Source)
-        table.insert(output, "")
-        
-        if #script.Source > 0 then
-            local lines = {}
-            for line in script.Source:gmatch("[^\r\n]+") do
-                table.insert(lines, line)
-                if #lines >= 10 then break end
-            end
-            
-            for i, line in ipairs(lines) do
-                -- Truncate long lines
-                if #line > 80 then
-                    line = line:sub(1, 77) .. "..."
-                end
-                table.insert(output, string.format("  %3d: %s", i, line))
-            end
-            
-            if lineCount > 10 then
-                table.insert(output, string.format("  ... and %d more lines", lineCount - 10))
-            end
-        end
-        table.insert(output, "")
-    end
-    
-    table.insert(output, "=" .. string.rep("=", 50))
-    
-    return table.concat(output, "\n")
-end
-
--- Find and analyze key scripts from your game
-function BytecodeAnalyzer:analyzeKeyScripts()
-    local output = {}
-    local targets = {}
-    
-    table.insert(output, "🎮 GAME BYTECODE ANALYSIS")
-    table.insert(output, "Time: " .. os.date("%H:%M:%S"))
     table.insert(output, "")
-    
-    -- Look for specific scripts based on your game structure
-    local rs = game:GetService("ReplicatedStorage")
-    
-    -- Priority 1: Weapon-related ModuleScripts
-    local modules = rs:FindFirstChild("Modules")
-    if modules then
-        for _, module in pairs(modules:GetChildren()) do
-            if module:IsA("ModuleScript") then
-                if module.Name:find("Weapon") or 
-                   module.Name:find("Gun") or 
-                   module.Name:find("Knife") then
-                    table.insert(targets, {
-                        name = module.Name,
-                        script = module,
-                        priority = 10
-                    })
-                elseif module.Name:find("Service") or module.Name:find("System") then
-                    table.insert(targets, {
-                        name = module.Name,
-                        script = module,
-                        priority = 5
-                    })
-                end
-            end
-        end
-    end
-    
-    -- Priority 2: ClientServices
-    local clientServices = rs:FindFirstChild("ClientServices")
-    if clientServices then
-        for _, service in pairs(clientServices:GetChildren()) do
-            if service:IsA("ModuleScript") and service.Name:find("Weapon") then
-                table.insert(targets, {
-                    name = "ClientServices." .. service.Name,
-                    script = service,
-                    priority = 9
-                })
-            end
-        end
-    end
-    
-    -- Priority 3: Player's current tool
-    local player = game.Players.LocalPlayer
-    if player and player.Character then
-        for _, child in pairs(player.Character:GetChildren()) do
-            if child:IsA("Tool") then
-                -- Look for scripts in the tool
-                for _, scriptChild in pairs(child:GetDescendants()) do
-                    if scriptChild:IsA("Script") or scriptChild:IsA("LocalScript") then
-                        if scriptChild.Name:find("Client") then
-                            table.insert(targets, {
-                                name = "Tool." .. child.Name .. "." .. scriptChild.Name,
-                                script = scriptChild,
-                                priority = 8
-                            })
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Sort by priority
-    table.sort(targets, function(a, b)
-        return a.priority > b.priority
-    end)
-    
-    -- Analyze found targets
-    if #targets == 0 then
-        table.insert(output, "⚠️ No specific targets found, analyzing random ModuleScripts...")
-        
-        -- Fallback: analyze first 2 ModuleScripts
-        local count = 0
-        for _, item in pairs(rs:GetChildren()) do
-            if item:IsA("ModuleScript") and count < 2 then
-                table.insert(output, "")
-                local analysis = self:analyzeScript(item)
-                table.insert(output, analysis)
-                count = count + 1
-            end
-        end
-        
-        if count == 0 then
-            table.insert(output, "❌ No ModuleScripts found at all!")
-        end
-    else
-        table.insert(output, "📋 FOUND " .. #targets .. " TARGET SCRIPTS:")
-        for i, target in ipairs(targets) do
-            table.insert(output, string.format("  %d. %s (Priority: %d)", i, target.name, target.priority))
-        end
-        table.insert(output, "")
-        
-        -- Analyze top 3 targets
-        for i = 1, math.min(3, #targets) do
-            local target = targets[i]
-            table.insert(output, "")
-            table.insert(output, "🚀 ANALYZING TARGET #" .. i .. ": " .. target.name)
-            
-            local analysis = self:analyzeScript(target.script)
-            table.insert(output, analysis)
-        end
-    end
+    table.insert(output, "=" .. string.rep("=", 60))
     
     return table.concat(output, "\n")
 end
 
--- ========== MAIN EXECUTION ==========
-print("🔍 PROPER BYTECODE ANALYZER")
-print("This will extract REAL strings and constants from scripts")
+-- ========== MAIN: DECODE WEAPON SERVICE ==========
+print("🔐 ATTEMPTING BYTECODE DECODING")
+print("This will try to decode hex bytecode into Lua-like structures")
 print("")
 
-local analyzer = BytecodeAnalyzer.new()
-local result = analyzer:analyzeKeyScripts()
+local decoder = BytecodeDecoder.new()
 
--- Save to file
-local fileName = "bytecode_extract_" .. os.time() .. ".txt"
-
-if type(writefile) == "function" then
-    local success, err = pcall(writefile, fileName, result)
-    if success then
-        print("✅ Saved to: " .. fileName)
+-- Try to decode the WeaponService module
+local target = game:GetService("ReplicatedStorage"):FindFirstChild("ClientServices")
+if target then
+    local weaponService = target:FindFirstChild("WeaponService")
+    if weaponService and weaponService:IsA("ModuleScript") then
+        print("🎯 TARGET: WeaponService ModuleScript")
+        local result = decoder:analyzeWithDecoding(weaponService)
         
-        -- Show preview
-        print("\n📄 PREVIEW (first 30 lines):")
-        print(string.rep("-", 50))
+        -- Save to file
+        local fileName = "bytecode_decode_" .. os.time() .. ".txt"
         
-        local lines = {}
-        for line in result:gmatch("[^\r\n]+") do
-            table.insert(lines, line)
-            if #lines >= 30 then break end
+        if type(writefile) == "function" then
+            pcall(writefile, fileName, result)
+            print("✅ Saved to: " .. fileName)
+            
+            -- Show preview
+            print("\n📄 DECODING PREVIEW:")
+            print(string.rep("-", 50))
+            
+            local lines = {}
+            for line in result:gmatch("[^\r\n]+") do
+                table.insert(lines, line)
+                if #lines >= 25 then break end
+            end
+            print(table.concat(lines, "\n"))
+            if #lines >= 25 then print("... (full in file)") end
+            
+        else
+            print("\n📄 OUTPUT:")
+            print(string.rep("-", 50))
+            print(result:sub(1, 1000))
+            if #result > 1000 then print("...") end
         end
-        
-        print(table.concat(lines, "\n"))
-        if #lines >= 30 then
-            print("... (full output in file)")
-        end
-        
     else
-        print("❌ Save failed: " .. tostring(err))
-        print("\n📋 OUTPUT PREVIEW:")
-        print(string.rep("-", 50))
-        print(result:sub(1, 800))
-        if #result > 800 then print("...") end
+        print("❌ WeaponService not found")
     end
 else
-    print("⚠️  writefile not available")
-    print("\n📋 OUTPUT:")
-    print(string.rep("-", 50))
-    print(result)
+    print("❌ ClientServices not found")
 end
 
 print("\n" .. string.rep("=", 50))
-print("Done! Check the file for extracted strings and constants.")
+print("Note: This is GUESSWORK based on reverse-engineering!")
+print("Real decompilation requires Luau VM knowledge.")
