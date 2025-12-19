@@ -1,400 +1,114 @@
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local localPlayer = Players.LocalPlayer
 
-local LocalPlayer = Players.LocalPlayer
-local CombatEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("MadworkCombat_CombatEvent")
-
--- Configuration
-local AIMBOT = {
+-- Main silent aim module
+local MadworkSilentAim = {
     Enabled = false,
-    ToggleKey = Enum.KeyCode.E,
-    FOV = 30,
-    SilentAim = true,
-    AimPart = "Head",
-    TeamCheck = true,
+    TargetPart = "Head",
     MaxDistance = 500,
-    Prediction = 0.15,
-    VisualizeFOV = true,
+    WeaponId = 1,
+    LastHitId = 37043
 }
 
--- Target tracking system
-local Targets = {}
-local TargetConnections = {}
-local FOVCircle = nil
-
--- Initialize
-local function initialize()
-    -- Create FOV visualization
-    if AIMBOT.VisualizeFOV then
-        FOVCircle = Drawing.new("Circle")
-        FOVCircle.Visible = AIMBOT.Enabled
-        FOVCircle.Thickness = 2
-        FOVCircle.Color = AIMBOT.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        FOVCircle.Transparency = 0.5
-        FOVCircle.Radius = AIMBOT.FOV
-        FOVCircle.Filled = false
-    end
+function MadworkSilentAim:getClosestEnemy()
+    if not localPlayer.Character then return nil end
+    local localHead = localPlayer.Character:FindFirstChild("Head")
+    if not localHead then return nil end
     
-    -- Setup keybind
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if not gameProcessed and input.KeyCode == AIMBOT.ToggleKey then
-            AIMBOT.Enabled = not AIMBOT.Enabled
-            print("Silent Aim:", AIMBOT.Enabled and "ENABLED" : "DISABLED")
-            
-            if FOVCircle then
-                FOVCircle.Visible = AIMBOT.Enabled
-                FOVCircle.Color = AIMBOT.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            end
-        end
-    end)
+    local closest = nil
+    local closestDist = math.huge
     
-    -- Auto-update player tracking
-    Players.PlayerAdded:Connect(trackPlayer)
-    Players.PlayerRemoving:Connect(untrackPlayer)
-    
-    -- Track existing players
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            trackPlayer(player)
-        end
-    end
-    
-    -- Update FOV circle position
-    if FOVCircle then
-        RunService.RenderStepped:Connect(function()
-            local mousePos = UserInputService:GetMouseLocation()
-            FOVCircle.Position = mousePos
-        end)
-    end
-end
-
--- Track a player
-function trackPlayer(player)
-    if Targets[player] then return end
-    
-    Targets[player] = {
-        Player = player,
-        Character = nil,
-        LastValidPosition = nil,
-        IsOnSameTeam = false
-    }
-    
-    -- Monitor character changes
-    TargetConnections[player] = {
-        CharacterAdded = player.CharacterAdded:Connect(function(char)
-            Targets[player].Character = char
-            trackCharacter(char, player)
-        end),
-        
-        CharacterRemoving = player.CharacterRemoving:Connect(function()
-            Targets[player].Character = nil
-        end),
-        
-        TeamChanged = player:GetPropertyChangedSignal("Team"):Connect(function()
-            updateTeamStatus(player)
-        end)
-    }
-    
-    -- Initial character check
-    if player.Character then
-        Targets[player].Character = player.Character
-        trackCharacter(player.Character, player)
-    end
-    
-    updateTeamStatus(player)
-end
-
--- Untrack a player
-function untrackPlayer(player)
-    if TargetConnections[player] then
-        for _, conn in pairs(TargetConnections[player]) do
-            conn:Disconnect()
-        end
-        TargetConnections[player] = nil
-    end
-    Targets[player] = nil
-end
-
--- Track character parts
-function trackCharacter(character, player)
-    local connection
-    connection = character.ChildAdded:Connect(function(child)
-        if child.Name == AIMBOT.AimPart then
-            Targets[player].AimPart = child
-            
-            -- Monitor position changes
-            if child:IsA("BasePart") then
-                Targets[player].PositionConnection = child:GetPropertyChangedSignal("Position"):Connect(function()
-                    Targets[player].LastValidPosition = child.Position
-                end)
-            end
-        end
-    end)
-    
-    table.insert(TargetConnections[player], connection)
-    
-    -- Check existing parts
-    local aimPart = character:FindFirstChild(AIMBOT.AimPart)
-    if aimPart then
-        Targets[player].AimPart = aimPart
-        Targets[player].LastValidPosition = aimPart.Position
-    end
-end
-
--- Update team status with multiple team check methods
-function updateTeamStatus(player)
-    if not AIMBOT.TeamCheck then
-        Targets[player].IsOnSameTeam = false
-        return
-    end
-    
-    local sameTeam = false
-    
-    -- Method 1: Team property
-    if LocalPlayer.Team and player.Team then
-        sameTeam = LocalPlayer.Team == player.Team
-    end
-    
-    -- Method 2: TeamColor (for older games)
-    if not sameTeam and LocalPlayer.TeamColor and player.TeamColor then
-        sameTeam = LocalPlayer.TeamColor == player.TeamColor
-    end
-    
-    -- Method 3: Check if player is in friends list (optional)
-    if not sameTeam and game:GetService("FriendsService"):IsFriendsWith(LocalPlayer.UserId, player.UserId) then
-        sameTeam = true -- Treat friends as same team
-    end
-    
-    Targets[player].IsOnSameTeam = sameTeam
-end
-
--- Get best target with all checks
-function getBestTarget()
-    if not AIMBOT.Enabled then return nil end
-    
-    local bestTarget = nil
-    local closestDistance = AIMBOT.FOV
-    local mousePos = UserInputService:GetMouseLocation()
-    local camera = workspace.CurrentCamera
-    
-    for _, targetData in pairs(Targets) do
-        -- Team check
-        if AIMBOT.TeamCheck and targetData.IsOnSameTeam then
-            continue
-        end
-        
-        -- Character/health check
-        local character = targetData.Character
-        if not character then continue end
-        
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not humanoid or humanoid.Health <= 0 then continue end
-        
-        -- Aim part check
-        local aimPart = targetData.AimPart or character:FindFirstChild(AIMBOT.AimPart)
-        if not aimPart then continue end
-        
-        -- Distance check
-        local distance = (aimPart.Position - camera.CFrame.Position).Magnitude
-        if distance > AIMBOT.MaxDistance then continue end
-        
-        -- FOV check
-        local screenPoint, onScreen = camera:WorldToViewportPoint(aimPart.Position)
-        if onScreen then
-            local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
-            local distanceToMouse = (screenPos - mousePos).Magnitude
-            
-            if distanceToMouse < closestDistance then
-                closestDistance = distanceToMouse
-                bestTarget = {
-                    Player = targetData.Player,
-                    Character = character,
-                    Part = aimPart,
-                    Position = aimPart.Position,
-                    ScreenPosition = screenPos,
-                    Distance = distance,
-                    Velocity = character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart.Velocity or Vector3.zero
-                }
+        if player ~= localPlayer and player.TeamColor ~= localPlayer.TeamColor then
+            local char = workspace.CharacterContainer:FindFirstChild(player.Name)
+            if char then
+                local targetPart = char:FindFirstChild(self.TargetPart)
+                if targetPart then
+                    local dist = (targetPart.Position - localHead.Position).Magnitude
+                    if dist < self.MaxDistance and dist < closestDist then
+                        closestDist = dist
+                        closest = {Player = player, Part = targetPart, Character = char}
+                    end
+                end
             end
         end
     end
-    
-    return bestTarget
+    return closest
 end
 
--- Modified combat packet generator with team awareness
-function generateCombatPacket(target)
-    if not target then
-        -- Return a miss packet if no target
-        return {
-            {
-                0, 0, {}, -- Empty hits
-                workspace.CurrentCamera.CFrame.LookVector, -- Forward direction
-                getGunPosition(),
-                math.random(10000, 99999),
-                1
-            },
-            14
-        }
-    end
+function MadworkSilentAim:createHitPacket(targetPart)
+    self.LastHitId = self.LastHitId + 1
     
-    -- Apply prediction
-    local predictedPosition = target.Position
-    if AIMBOT.Prediction > 0 and target.Velocity then
-        predictedPosition = target.Position + (target.Velocity * AIMBOT.Prediction)
-    end
-    
-    -- Direction from gun to target
-    local gunPosition = getGunPosition()
-    local direction = (predictedPosition - gunPosition).Unit
-    
-    -- Team-based damage multiplier (optional)
-    local damageMultiplier = 4 -- Default
-    if target.Player:FindFirstChild("IsVIP") then
-        damageMultiplier = 3 -- Less damage to VIPs
-    end
+    local origin = localPlayer.Character.Head.Position
+    local hitPos = targetPart.Position
+    local direction = (hitPos - origin).Unit
     
     return {
-        {
-            0, -- Action type
-            0, -- Weapon ID
-            { -- Hits
+        0, 0, -- Action type and index
+        { -- Hits array
+            {
+                0, -- Hit index
                 {
-                    0, -- Hit index
-                    {
-                        3, -- Damage type
-                        2, -- Body part (head)
-                        damageMultiplier,
-                        7,
-                        direction,
-                        nil, -- No object hit
-                        predictedPosition,
-                        -direction, -- Normal
-                        Vector3.new(21, 15, 7)
-                    },
-                    true, -- Critical
-                    0
-                }
-            },
-            direction, -- Shot direction
-            gunPosition, -- Origin
-            math.random(10000, 99999), -- Event ID
-            1 -- Your player ID
+                    3, -- Damage type (NEED TO FIND CORRECT VALUE)
+                    100, -- Damage (ADJUST THIS)
+                    4, 7, -- Unknown values (CRITICAL TO FIND)
+                    direction, -- Direction
+                    targetPart, -- Hit instance
+                    hitPos, -- Position
+                    Vector3.new(0, 1, 0), -- Normal (usually up for head)
+                    Vector3.new(2, 2, 2) -- Size
+                },
+                true, -- Valid
+                0 -- Flags
+            }
         },
-        14 -- Shoot action
+        direction, -- Aim direction
+        origin, -- Origin position
+        self.LastHitId, -- Hit ID
+        self.WeaponId -- Weapon ID
     }
 end
 
--- Hook the combat system
-local function hookCombat()
-    local originalCombatFunction
+function MadworkSilentAim:fireAtTarget(target)
+    local combatEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("MadworkCombat_CombatEvent")
+    local hitData = self:createHitPacket(target.Part)
     
-    -- Find the combat function
-    for _, obj in pairs(getgc()) do
-        if type(obj) == "function" then
-            local info = debug.getinfo(obj)
-            if info.name == "Replicate" and info.source:find("CombatClient") then
-                originalCombatFunction = obj
-                break
-            end
-        end
-    end
-    
-    if originalCombatFunction then
-        hookfunction(originalCombatFunction, function(actionData)
-            local target = getBestTarget()
-            
-            if target and actionData and actionData[2] == 14 then
-                local modifiedPacket = generateCombatPacket(target)
-                actionData = modifiedPacket[1]
-            end
-            
-            -- Call original
-            return CombatEvent:FireServer(actionData)
-        end)
-        
-        print("Combat system hooked successfully!")
-    else
-        warn("Could not find combat function. Using direct packet sending.")
-        
-        -- Alternative: Hook MouseButton1Click on weapons
-        for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if tool:IsA("Tool") and tool:FindFirstChild("Shoot") then
-                tool.Activated:Connect(function()
-                    if AIMBOT.Enabled then
-                        local target = getBestTarget()
-                        if target then
-                            local packet = generateCombatPacket(target)
-                            CombatEvent:FireServer(unpack(packet))
-                            return -- Prevent normal firing
-                        end
-                    end
-                end)
-            end
-        end
-    end
-end
-
--- Get gun position with fallbacks
-function getGunPosition()
-    local character = LocalPlayer.Character
-    if character then
-        local tool = character:FindFirstChildOfClass("Tool")
-        if tool then
-            local handle = tool:FindFirstChild("Handle") or tool:FindFirstChild("Part")
-            if handle then
-                return handle.Position
-            end
-            return tool.Position
-        end
-        local root = character:FindFirstChild("HumanoidRootPart")
-        if root then return root.Position end
-    end
-    return workspace.CurrentCamera.CFrame.Position
-end
-
--- Status display
-local function createStatusUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Parent = game:GetService("CoreGui")
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(0, 200, 0, 30)
-    textLabel.Position = UDim2.new(0, 10, 0, 40)
-    textLabel.BackgroundTransparency = 0.5
-    textLabel.TextColor3 = Color3.new(1, 1, 1)
-    textLabel.Text = "Silent Aim: OFF (Press E)"
-    textLabel.Font = Enum.Font.Code
-    textLabel.TextSize = 14
-    textLabel.Parent = screenGui
-    
-    RunService.RenderStepped:Connect(function()
-        textLabel.Text = string.format(
-            "Silent Aim: %s | Targets: %d (Press E)",
-            AIMBOT.Enabled and "ON" : "OFF",
-            #Players:GetPlayers() - 1
-        )
-        textLabel.TextColor3 = AIMBOT.Enabled and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+    -- Fire with EventNumber 14
+    local success, err = pcall(function()
+        combatEvent:FireServer({hitData, 14})
     end)
     
-    return screenGui
+    if not success then
+        warn("Silent aim failed:", err)
+        return false
+    end
+    return true
 end
 
--- Start everything
-initialize()
-hookCombat()
-createStatusUI()
+-- Hook into the combat system to intercept legitimate shots
+function MadworkSilentAim:hookCombatSystem()
+    local combatClient = ReplicatedStorage:WaitForChild("Client"):WaitForChild("Madwork"):WaitForChild("CombatClient")
+    
+    -- You would need to find and hook the Replicate function
+    -- This requires analyzing the actual combat client script
+end
 
-print("Auto-Updating Silent Aim loaded!")
-print("Toggle Key:", AIMBOT.ToggleKey)
-print("Team Check:", AIMBOT.TeamCheck)
-print("Aim Part:", AIMBOT.AimPart)
-print("FOV:", AIMBOT.FOV)
+-- Auto-fire mode
+function MadworkSilentAim:toggleAutoAim()
+    self.Enabled = not self.Enabled
+    
+    if self.Enabled then
+        self.connection = game:GetService("RunService").Heartbeat:Connect(function()
+            local target = self:getClosestEnemy()
+            if target then
+                self:fireAtTarget(target)
+            end
+        end)
+    elseif self.connection then
+        self.connection:Disconnect()
+        self.connection = nil
+    end
+end
 
--- Auto-rehook when player respawns
-LocalPlayer.CharacterAdded:Connect(function()
-    wait(1) -- Wait for tools to load
-    hookCombat()
-end)
+return MadworkSilentAim
