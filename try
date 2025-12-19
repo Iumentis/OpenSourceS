@@ -1,0 +1,332 @@
+local DecompilerHelper = {}
+DecompilerHelper.__index = DecompilerHelper
+
+function DecompilerHelper.new()
+    local self = setmetatable({}, DecompilerHelper)
+    self.methods = {}
+    return self
+end
+
+-- Try ALL decompilation methods the executor provides
+function DecompilerHelper:tryAllMethods(script)
+    local results = {}
+    
+    -- Method 1: Standard decompile
+    table.insert(results, {
+        name = "Standard",
+        source = self:tryDecompile(script)
+    })
+    
+    -- Method 2: Bytecode + string extraction
+    table.insert(results, {
+        name = "Bytecode Analysis",
+        source = self:analyzeBytecode(script)
+    })
+    
+    -- Method 3: Closure inspection
+    table.insert(results, {
+        name = "Closure Inspection",
+        source = self:inspectClosure(script)
+    })
+    
+    -- Method 4: Memory scanning (if available)
+    if getscripts then
+        table.insert(results, {
+            name = "Memory Scan",
+            source = self:memoryScan(script)
+        })
+    end
+    
+    return results
+end
+
+function DecompilerHelper:tryDecompile(script)
+    -- Try the built-in decompiler first
+    local success, result = pcall(function()
+        return decompile(script) or "decompile() returned nil"
+    end)
+    
+    if success then
+        return result
+    end
+    
+    -- Try alternative decompiler names
+    local alternatives = {"decompile", "dumpluau", "luau_decompile", "getscriptsource"}
+    for _, name in ipairs(alternatives) do
+        local func = _G[name] or getgenv()[name]
+        if type(func) == "function" then
+            success, result = pcall(func, script)
+            if success and result then
+                return "-- Using " .. name .. ":\n" .. result
+            end
+        end
+    end
+    
+    return "-- Standard decompilation failed: " .. (result or "unknown error")
+end
+
+-- When decompile() fails, extract whatever we CAN get
+function DecompilerHelper:analyzeBytecode(script)
+    local output = {"-- Bytecode Analysis (decompile() failed)"}
+    
+    -- Try to get bytecode
+    local bytecodeSuccess, bytecode = pcall(getscriptbytecode, script)
+    if bytecodeSuccess and bytecode then
+        table.insert(output, "-- Bytecode length: " .. #bytecode .. " bytes")
+        table.insert(output, "-- Hex preview: " .. bytecode:sub(1, 100) .. "...")
+    end
+    
+    -- Try to get closure
+    local closureSuccess, closure = pcall(getscriptclosure, script)
+    if closureSuccess and closure then
+        table.insert(output, "-- Got function closure")
+        
+        -- Extract constants
+        local constSuccess, constants = pcall(debug.getconstants, closure)
+        if constSuccess and constants then
+            table.insert(output, "-- Constants found: " .. #constants)
+            
+            -- Group constants by type
+            local strings = {}
+            local numbers = {}
+            
+            for i, const in ipairs(constants) do
+                if type(const) == "string" then
+                    if #const < 100 then  -- Skip huge strings
+                        table.insert(strings, const)
+                    end
+                elseif type(const) == "number" then
+                    table.insert(numbers, const)
+                end
+            end
+            
+            if #strings > 0 then
+                table.insert(output, "-- String constants:")
+                for i = 1, math.min(10, #strings) do
+                    table.insert(output, '--   "' .. strings[i] .. '"')
+                end
+                if #strings > 10 then
+                    table.insert(output, "--   ... and " .. (#strings - 10) .. " more")
+                end
+            end
+            
+            if #numbers > 0 then
+                table.insert(output, "-- Number constants: " .. table.concat(numbers, ", "))
+            end
+        end
+        
+        -- Look for nested functions
+        local protoSuccess, protos = pcall(debug.getprotos, closure)
+        if protoSuccess and protos then
+            table.insert(output, "-- Nested functions: " .. #protos)
+        end
+    else
+        table.insert(output, "-- No closure available")
+    end
+    
+    -- Check if script has source property (ModuleScripts sometimes do)
+    if script:IsA("ModuleScript") and script.Source and #script.Source > 0 then
+        table.insert(output, "-- ModuleScript has source:")
+        table.insert(output, script.Source:sub(1, 500))
+        if #script.Source > 500 then
+            table.insert(output, "-- ... (truncated)")
+        end
+    end
+    
+    return table.concat(output, "\n")
+end
+
+function DecompilerHelper:inspectClosure(script)
+    local output = {"-- Closure Structure Analysis"}
+    
+    local success, closure = pcall(getscriptclosure, script)
+    if not success or not closure then
+        return "-- No closure available for inspection"
+    end
+    
+    -- Get debug info
+    local info = debug.getinfo(closure)
+    table.insert(output, "-- Debug info:")
+    for k, v in pairs(info) do
+        if type(v) == "string" and #v < 100 then
+            table.insert(output, string.format("--   %-15s: %s", k, tostring(v)))
+        end
+    end
+    
+    -- Check if it's a C closure or Lua closure
+    if iscclosure then
+        table.insert(output, "-- Is C closure: " .. tostring(iscclosure(closure)))
+    end
+    if islclosure then
+        table.insert(output, "-- Is L closure: " .. tostring(islclosure(closure)))
+    end
+    
+    -- Try to detect common patterns
+    table.insert(output, "-- Pattern detection:")
+    
+    local constants = debug.getconstants(closure) or {}
+    local patterns = {
+        {"FireServer", "RemoteEvent usage"},
+        {"InvokeServer", "RemoteFunction usage"},
+        {"WaitForChild", "Child waiting pattern"},
+        {"Connect", "Event connection"},
+        {"TweenService", "Animation/Tween usage"},
+        {"HttpService", "HTTP requests"},
+        {"DataStore", "Data persistence"},
+    }
+    
+    for _, const in ipairs(constants) do
+        if type(const) == "string" then
+            for _, pattern in ipairs(patterns) do
+                if const == pattern[1] then
+                    table.insert(output, "--   Found: " .. pattern[2])
+                end
+            end
+        end
+    end
+    
+    return table.concat(output, "\n")
+end
+
+function DecompilerHelper:memoryScan(script)
+    local output = {"-- Memory Scan Results"}
+    
+    -- Find all references to this script
+    local allScripts = getscripts() or {}
+    local similarScripts = {}
+    
+    for _, otherScript in ipairs(allScripts) do
+        if otherScript ~= script and 
+           otherScript.ClassName == script.ClassName and
+           otherScript.Name == script.Name then
+            table.insert(similarScripts, otherScript)
+        end
+    end
+    
+    if #similarScripts > 0 then
+        table.insert(output, "-- Found " .. #similarScripts .. " similar scripts")
+        
+        -- Try to decompile the first similar one
+        for i, similar in ipairs(similarScripts) do
+            if i <= 3 then  -- Limit to 3 attempts
+                local success, source = pcall(decompile, similar)
+                if success and source then
+                    table.insert(output, "-- Similar script #" .. i .. " decompiled successfully")
+                    table.insert(output, "-- Preview:")
+                    table.insert(output, source:sub(1, 200) .. "...")
+                    break
+                end
+            end
+        end
+    else
+        table.insert(output, "-- No similar scripts found in memory")
+    end
+    
+    return table.concat(output, "\n")
+end
+
+-- Enhanced decompiler that tries everything
+function DecompilerHelper:enhancedDecompile(script)
+    print("\n" .. string.rep("=", 60))
+    print("ENHANCED DECOMPILATION ATTEMPT")
+    print("Script: " .. script:GetFullName())
+    print(string.rep("=", 60))
+    
+    local results = self:tryAllMethods(script)
+    
+    -- Find the best result
+    local bestResult = nil
+    local bestScore = 0
+    
+    for _, result in ipairs(results) do
+        local score = self:rateResult(result.source)
+        print(string.format("[%s] Score: %d/100", result.name, score))
+        
+        if score > bestScore then
+            bestScore = score
+            bestResult = result.source
+        end
+    end
+    
+    print(string.rep("-", 60))
+    
+    if bestScore > 30 then  -- Arbitrary threshold
+        print("✓ Using best result (Score: " .. bestScore .. "/100)")
+        return bestResult
+    else
+        print("✗ All methods failed, combining results...")
+        return self:combineResults(results)
+    end
+end
+
+function DecompilerHelper:rateResult(source)
+    if not source then return 0 end
+    
+    local score = 0
+    
+    -- Points for having actual Lua code
+    if source:match("function%s+[%w_]+%s*%(") then score = score + 30 end
+    if source:match("local%s+[%w_]+%s*=") then score = score + 20 end
+    if source:match("if%s+.*%s+then") then score = score + 15 end
+    if source:match("for%s+.*%s+do") then score = score + 15 end
+    if source:match("game%.") then score = score + 10 end
+    
+    -- Penalties for error messages
+    if source:match("Decompilation Error") then score = score - 40 end
+    if source:match("failed") then score = score - 20 end
+    
+    return math.max(0, math.min(100, score))
+end
+
+function DecompilerHelper:combineResults(results)
+    local output = {"-- COMBINED DECOMPILATION ATTEMPT"}
+    output[#output + 1] = "-- Tried " .. #results .. " methods, none gave perfect result"
+    output[#output + 1] = ""
+    
+    for _, result in ipairs(results) do
+        output[#output + 1] = string.rep("-", 40)
+        output[#output + 1] = "-- Method: " .. result.name
+        output[#output + 1] = string.rep("-", 40)
+        
+        -- Only include useful parts
+        local useful = self:extractUsefulParts(result.source)
+        if #useful > 0 then
+            output[#output + 1] = useful
+        else
+            output[#output + 1] = "-- No useful information from this method"
+        end
+    end
+    
+    return table.concat(output, "\n")
+end
+
+function DecompilerHelper:extractUsefulParts(source)
+    local lines = {}
+    for line in source:gmatch("[^\r\n]+") do
+        -- Keep lines that have actual content (not just comments/errors)
+        if not line:match("^%-%- Decompilation Error") and
+           not line:match("^%-%- failed") and
+           not line:match("^nil$") then
+            lines[#lines + 1] = line
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+-- ========== USAGE ==========
+
+-- Create and use the helper
+local helper = DecompilerHelper.new()
+
+-- Test on a problematic script
+local targetScript = game:GetService("Players").LocalPlayer.Backpack.Gun.GunClient
+local result = helper:enhancedDecompile(targetScript)
+
+print("\n" .. string.rep("=", 60))
+print("FINAL OUTPUT")
+print(string.rep("=", 60))
+print(result)
+
+-- Save to file for analysis
+writefile("enhanced_decompile_output.lua", result)
+print("\n✓ Saved to enhanced_decompile_output.lua")
