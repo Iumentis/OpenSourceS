@@ -1,157 +1,279 @@
--- SIMPLEST GAME SCANNER - WON'T CRASH
-print("📡 SIMPLE GAME SCAN")
-print("=" .. string.rep("=", 40))
+-- SMART GAME SCANNER - GETS SPECIFIC NAMES AND PATHS
+print("🔍 SMART GAME SCANNER - COLLECTING NAMES")
+print("=" .. string.rep("=", 50))
 
-local info = {}
+local output = {}
+local function add(line) table.insert(output, line) end
 
--- 1. BASIC GAME INFO
-table.insert(info, "GAME INFO:")
-table.insert(info, "PlaceId: " .. tostring(game.PlaceId))
-table.insert(info, "JobId: " .. tostring(game.JobId))
-table.insert(info, "")
+add("=== GAME STRUCTURE WITH NAMES ===")
+add("Time: " .. os.date("%H:%M:%S"))
+add("")
 
--- 2. PLAYERS (most important)
-local playersSuccess, players = pcall(function() return game:GetService("Players") end)
-if playersSuccess and players then
-    table.insert(info, "PLAYERS:")
-    local allPlayers = players:GetPlayers()
-    table.insert(info, "Total: " .. #allPlayers)
+-- 1. PLAYERS DETAIL
+add("1️⃣ PLAYERS:")
+local players = game:GetService("Players")
+local me = players.LocalPlayer
+
+-- All player names
+local playerNames = {}
+for _, player in pairs(players:GetPlayers()) do
+    table.insert(playerNames, player.Name)
+end
+add("  Online: " .. table.concat(playerNames, ", "))
+
+if me then
+    add("  Me: " .. me.Name)
     
-    local me = players.LocalPlayer
-    if me then
-        table.insert(info, "You: " .. me.Name)
-        table.insert(info, "UserId: " .. tostring(me.UserId))
+    -- Character details
+    if me.Character then
+        add("  Character parts:")
+        local charParts = me.Character:GetChildren()
+        for i = 1, math.min(10, #charParts) do
+            local part = charParts[i]
+            add("    • " .. part.Name .. " (" .. part.ClassName .. ")")
+        end
         
-        -- Check character
-        if me.Character then
-            table.insert(info, "Character: YES")
-            
-            -- Check for ONE tool only (no loops that could crash)
-            local charChildren = me.Character:GetChildren()
-            if #charChildren > 0 then
-                for i = 1, math.min(3, #charChildren) do
-                    local child = charChildren[i]
-                    if child:IsA("Tool") then
-                        table.insert(info, "Tool: " .. child.Name)
-                        break  -- Only show first tool
-                    end
+        -- Backpack tools
+        if me.Backpack then
+            local tools = {}
+            for _, item in pairs(me.Backpack:GetChildren()) do
+                if item:IsA("Tool") then
+                    table.insert(tools, item.Name)
                 end
             end
-        else
-            table.insert(info, "Character: NO")
-        end
-    end
-    table.insert(info, "")
-end
-
--- 3. WORKSPACE (limited)
-local wsSuccess, workspace = pcall(function() return game:GetService("Workspace") end)
-if wsSuccess and workspace then
-    table.insert(info, "WORKSPACE:")
-    local children = workspace:GetChildren()
-    table.insert(info, "Items: " .. #children)
-    
-    -- Show ONLY first 3 important items
-    local shown = 0
-    for i = 1, math.min(5, #children) do
-        local child = children[i]
-        if child:IsA("Model") or child:IsA("Tool") then
-            table.insert(info, "  • " .. child.Name .. " (" .. child.ClassName .. ")")
-            shown = shown + 1
-            if shown >= 3 then break end
-        end
-    end
-    table.insert(info, "")
-end
-
--- 4. REPLICATEDSTORAGE (just count remotes)
-local rsSuccess, rs = pcall(function() return game:GetService("ReplicatedStorage") end)
-if rsSuccess and rs then
-    table.insert(info, "REPLICATEDSTORAGE:")
-    local children = rs:GetChildren()
-    table.insert(info, "Items: " .. #children)
-    
-    -- Count remotes without looping through all
-    local remoteCount = 0
-    for i = 1, math.min(10, #children) do
-        local child = children[i]
-        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-            remoteCount = remoteCount + 1
-            if remoteCount <= 2 then  -- Show first 2 only
-                table.insert(info, "  • " .. child.Name .. " (" .. child.ClassName .. ")")
+            if #tools > 0 then
+                add("  Backpack tools: " .. table.concat(tools, ", "))
             end
         end
     end
-    
-    if remoteCount > 2 then
-        table.insert(info, "  • ... and " .. (remoteCount - 2) .. " more remotes")
-    end
-    table.insert(info, "")
 end
+add("")
 
--- 5. CURRENT TOOLS/WEAPONS (if any)
-table.insert(info, "CURRENT TOOLS SEARCH:")
-local foundTools = {}
+-- 2. WORKSPACE DETAIL
+add("2️⃣ WORKSPACE ITEMS:")
+local workspace = game:GetService("Workspace")
+local wsItems = workspace:GetChildren()
 
--- Check workspace for tools with "Gun" in name
-if wsSuccess and workspace then
-    local children = workspace:GetChildren()
-    for i = 1, math.min(20, #children) do
-        local child = children[i]
-        if child:IsA("Tool") and (child.Name:find("Gun") or child.Name:find("Weapon") or child.Name:find("Tool")) then
-            table.insert(foundTools, child.Name)
-            if #foundTools >= 3 then break end
+for i = 1, math.min(15, #wsItems) do
+    local item = wsItems[i]
+    add("  • " .. item.Name .. " (" .. item.ClassName .. ")")
+    
+    -- Show first 3 children of important items
+    if item:IsA("Model") or item:IsA("Folder") then
+        local children = item:GetChildren()
+        for j = 1, math.min(3, #children) do
+            local child = children[j]
+            if child:IsA("Tool") or child:IsA("Part") or child:IsA("Script") then
+                add("    ↳ " .. child.Name .. " (" .. child.ClassName .. ")")
+            end
         end
     end
 end
 
-if #foundTools > 0 then
-    table.insert(info, "Found tools: " .. table.concat(foundTools, ", "))
+if #wsItems > 15 then
+    add("  ... and " .. (#wsItems - 15) .. " more items")
+end
+add("")
+
+-- 3. REPLICATEDSTORAGE DETAIL (MOST IMPORTANT)
+add("3️⃣ REPLICATEDSTORAGE DETAIL:")
+local rs = game:GetService("ReplicatedStorage")
+local rsItems = rs:GetChildren()
+
+-- Group by type
+local modules = {}
+local remotes = {}
+local folders = {}
+local others = {}
+
+for _, item in pairs(rsItems) do
+    if item:IsA("ModuleScript") then
+        table.insert(modules, item.Name)
+    elseif item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
+        table.insert(remotes, item.Name)
+    elseif item:IsA("Folder") then
+        table.insert(folders, item.Name)
+    else
+        table.insert(others, item.Name .. " (" .. item.ClassName .. ")")
+    end
+end
+
+-- Show modules
+if #modules > 0 then
+    add("  📦 MODULESCRIPTS (" .. #modules .. "):")
+    for i = 1, math.min(10, #modules) do
+        add("    • " .. modules[i])
+    end
+    if #modules > 10 then
+        add("    ... and " .. (#modules - 10) .. " more")
+    end
+end
+
+-- Show remotes
+if #remotes > 0 then
+    add("  🔗 REMOTES (" .. #remotes .. "):")
+    for _, remote in pairs(remotes) do
+        add("    • " .. remote)
+    end
+end
+
+-- Show folders
+if #folders > 0 then
+    add("  📁 FOLDERS (" .. #folders .. "):")
+    for i = 1, math.min(5, #folders) do
+        add("    • " .. folders[i])
+        
+        -- Peek inside important folders
+        local folder = rs:FindFirstChild(folders[i])
+        if folder then
+            local folderItems = folder:GetChildren()
+            for j = 1, math.min(3, #folderItems) do
+                local fItem = folderItems[j]
+                if fItem:IsA("ModuleScript") or fItem:IsA("RemoteEvent") then
+                    add("      ↳ " .. fItem.Name .. " (" .. fItem.ClassName .. ")")
+                end
+            end
+        end
+    end
+end
+
+-- Show others
+if #others > 0 then
+    add("  📝 OTHER (" .. #others .. "):")
+    for i = 1, math.min(5, #others) do
+        add("    • " .. others[i])
+    end
+end
+add("")
+
+-- 4. TOOLS/GUNS SEARCH
+add("4️⃣ TOOLS & GUNS SEARCH:")
+
+-- Search workspace for anything that looks like a weapon
+local potentialWeapons = {}
+local allDescendants = workspace:GetDescendants()
+
+for i = 1, math.min(100, #allDescendants) do
+    local item = allDescendants[i]
+    if item:IsA("Tool") then
+        table.insert(potentialWeapons, "Tool: " .. item:GetFullName())
+    elseif item:IsA("Model") and (
+        item.Name:find("Gun") or 
+        item.Name:find("Weapon") or 
+        item.Name:find("Sword") or
+        item.Name:find("Knife") or
+        item.Name:find("Bow") or
+        item.Name:find("Rifle")
+    ) then
+        table.insert(potentialWeapons, "Model: " .. item:GetFullName())
+    end
+end
+
+if #potentialWeapons > 0 then
+    for i = 1, math.min(10, #potentialWeapons) do
+        add("  • " .. potentialWeapons[i])
+    end
+    if #potentialWeapons > 10 then
+        add("  ... and " .. (#potentialWeapons - 10) .. " more possible weapons")
+    end
 else
-    table.insert(info, "No obvious tools found")
+    add("  No obvious weapons found")
+end
+add("")
+
+-- 5. NETWORKING (RemoteEvents/Functions)
+add("5️⃣ NETWORKING - ALL REMOTES FOUND:")
+
+local allRemotes = {}
+local servicesToCheck = {
+    "ReplicatedStorage",
+    "Workspace", 
+    "Players",
+    "ReplicatedFirst"
+}
+
+for _, serviceName in pairs(servicesToCheck) do
+    local service = game:GetService(serviceName)
+    if service then
+        for _, item in pairs(service:GetDescendants()) do
+            if item:IsA("RemoteEvent") then
+                table.insert(allRemotes, serviceName .. " → " .. item:GetFullName())
+            elseif item:IsA("RemoteFunction") then
+                table.insert(allRemotes, serviceName .. " → " .. item:GetFullName() .. " (Function)")
+            end
+        end
+    end
 end
 
--- OUTPUT
-local output = table.concat(info, "\n")
-print(output)
+if #allRemotes > 0 then
+    for _, remote in pairs(allRemotes) do
+        add("  🔗 " .. remote)
+    end
+else
+    add("  No remotes found (unusual!)")
+end
+add("")
 
--- TRY TO SAVE (but don't crash if it fails)
-print("\n" .. string.rep("-", 40))
-print("SAVING ATTEMPT...")
+-- 6. SCRIPT LOCATIONS
+add("6️⃣ SCRIPT LOCATIONS (first 10):")
+local scriptsFound = 0
+local scriptTypes = {"Script", "LocalScript", "ModuleScript"}
 
-local saveSuccess = false
+for _, serviceName in pairs(servicesToCheck) do
+    local service = game:GetService(serviceName)
+    if service then
+        for _, item in pairs(service:GetDescendants()) do
+            for _, scriptType in pairs(scriptTypes) do
+                if item:IsA(scriptType) then
+                    add("  📜 " .. serviceName .. " → " .. item:GetFullName())
+                    scriptsFound = scriptsFound + 1
+                    if scriptsFound >= 10 then break end
+                end
+            end
+            if scriptsFound >= 10 then break end
+        end
+    end
+    if scriptsFound >= 10 then break end
+end
 
--- Method 1: setclipboard
+add("  Total scripts found: " .. scriptsFound .. " (showing first 10)")
+add("")
+
+-- FINAL OUTPUT
+local finalOutput = table.concat(output, "\n")
+print(finalOutput)
+
+-- SAVE ATTEMPT
+print("\n" .. string.rep("=", 50))
+print("SAVING...")
+
+local saved = false
+
+-- Method 1: Clipboard
 if type(setclipboard) == "function" then
-    local ok = pcall(setclipboard, output)
+    local ok = pcall(setclipboard, finalOutput)
     if ok then
-        print("✅ Copied to clipboard!")
-        saveSuccess = true
+        print("✅ COPIED TO CLIPBOARD!")
+        saved = true
     end
 end
 
--- Method 2: writefile
-if not saveSuccess and type(writefile) == "function" then
-    local ok = pcall(writefile, "game_info.txt", output)
+-- Method 2: File
+if not saved and type(writefile) == "function" then
+    local ok = pcall(writefile, "game_details.txt", finalOutput)
     if ok then
-        print("✅ Saved to game_info.txt")
-        saveSuccess = true
+        print("✅ SAVED TO: game_details.txt")
+        saved = true
     end
 end
 
--- Method 3: rconsoleprint (if available)
-if not saveSuccess and type(rconsoleprint) == "function" then
-    pcall(rconsoleprint, output)
-    print("✅ Printed to console")
-    saveSuccess = true
+-- Method 3: Manual
+if not saved then
+    print("⚠️  COULD NOT AUTO-SAVE")
+    print("📋 PLEASE MANUALLY COPY THE TEXT ABOVE")
 end
 
-if not saveSuccess then
-    print("⚠️  Could not save automatically")
-    print("📋 Please MANUALLY copy the text above")
-end
-
-print("\n" .. string.rep("=", 40))
-print("SCAN COMPLETE!")
-print("Lines: " .. (#info))
-print(string.rep("=", 40))
+print("\n📊 STATS:")
+print("Lines: " .. #output)
+print("Chars: " .. #finalOutput)
+print("=" .. string.rep("=", 50))
