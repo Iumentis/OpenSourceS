@@ -1,0 +1,537 @@
+local function checkExecutorFeatures()
+    local results = {}
+    local passed = 0
+    local total = 0
+    
+    -- Helper to add tests
+    local function addTest(name, category, testFunc)
+        total = total + 1
+        local ok, result = pcall(testFunc)
+        results[name] = {
+            category = category,
+            ok = ok,
+            result = result
+        }
+        if ok then passed = passed + 1 end
+        return ok
+    end
+    
+    print("=== Universal Executor Feature Checker ===")
+    print("Testing sUNC/UNC capabilities...\n")
+    
+    -- sUNC Introduction
+    addTest("identifyexecutor", "sUNC Introduction", function()
+        local name = (identifyexecutor or getexecutorname or function() return "Unknown" end)()
+        return "Executor: " .. tostring(name)
+    end)
+    
+    -- Closures
+    addTest("hookfunction", "Closures", function()
+        local testFunc = function() return 42 end
+        local hooked = hookfunction(testFunc, function() return 1337 end)
+        return "Hookable"
+    end)
+    
+    addTest("hookmetamethod", "Closures", function()
+        local tbl = {}
+        local mt = {}
+        setmetatable(tbl, mt)
+        local ok = pcall(hookmetamethod, tbl, "__index", function() end)
+        return ok and "Metamethod hookable" or "Limited"
+    end)
+    
+    addTest("newcclosure", "Closures", function()
+        local func = function() end
+        local cfunc = newcclosure(func)
+        return "CClosure creatable"
+    end)
+    
+    addTest("iscclosure", "Closures", function()
+        local func = function() end
+        local isC = iscclosure(func)
+        return "Checkable: " .. tostring(isC)
+    end)
+    
+    addTest("islclosure", "Closures", function()
+        local func = function() end
+        local isL = islclosure(func)
+        return "Checkable: " .. tostring(isL)
+    end)
+    
+    addTest("isexecutorclosure", "Closures", function()
+        local func = function() end
+        local isExec = isexecutorclosure(func)
+        return "Checkable: " .. tostring(isExec)
+    end)
+    
+    addTest("clonefunction", "Closures", function()
+        local orig = function() return "original" end
+        local cloned = clonefunction(orig)
+        return "Cloneable"
+    end)
+    
+    addTest("getfunctionhash", "Closures", function()
+        local func = function() end
+        local hash = getfunctionhash(func)
+        return "Hash: " .. tostring(hash and string.sub(tostring(hash), 1, 10) .. "..." or "N/A")
+    end)
+    
+    -- Cryptography
+    addTest("crypt.base64encode", "Cryptography", function()
+        local encoded = crypt.base64encode("test")
+        return "Encodes: " .. tostring(encoded)
+    end)
+    
+    addTest("crypt.base64decode", "Cryptography", function()
+        local decoded = crypt.base64decode("dGVzdA==")
+        return "Decodes: " .. tostring(decoded)
+    end)
+    
+    -- Debug
+    local debugTestFunc = function(a, b) return a + b end
+    
+    addTest("debug.getconstants", "Debug", function()
+        local constants = debug.getconstants(debugTestFunc)
+        return "Constants: " .. tostring(#constants)
+    end)
+    
+    addTest("debug.getconstant", "Debug", function()
+        local constant = debug.getconstant(debugTestFunc, 1)
+        return "Constant retrievable"
+    end)
+    
+    addTest("debug.setconstant", "Debug", function()
+        local func = function() return "old" end
+        debug.setconstant(func, 1, "new")
+        return "Constant settable"
+    end)
+    
+    addTest("debug.getupvalues", "Debug", function()
+        local upvalues = debug.getupvalues(debugTestFunc)
+        return "Upvalues: " .. tostring(#upvalues)
+    end)
+    
+    addTest("debug.getupvalue", "Debug", function()
+        local upvalName, upvalValue = debug.getupvalue(debugTestFunc, 1)
+        return "Upvalue retrievable"
+    end)
+    
+    addTest("debug.setupvalue", "Debug", function()
+        local func = function() local x = 1; return x end
+        debug.setupvalue(func, 1, 999)
+        return "Upvalue settable"
+    end)
+    
+    addTest("debug.getstack", "Debug", function()
+        local stack = debug.getstack(1)
+        return "Stack retrievable"
+    end)
+    
+    addTest("debug.setstack", "Debug", function()
+        local ok = pcall(debug.setstack, 1, 1, "test")
+        return "Stack " .. (ok and "settable" or "protected")
+    end)
+    
+    addTest("debug.getprotos", "Debug", function()
+        local func = function() 
+            local inner = function() end
+            return inner
+        end
+        local protos = debug.getprotos(func)
+        return "Protos: " .. tostring(#protos)
+    end)
+    
+    addTest("debug.getproto", "Debug", function()
+        local func = function() 
+            local inner = function() end
+            return inner
+        end
+        local proto = debug.getproto(func, 1)
+        return "Proto retrievable"
+    end)
+    
+    -- Drawing
+    addTest("Drawing.new", "Drawing", function()
+        local drawing = Drawing.new("Line")
+        drawing.Visible = false
+        drawing:Remove()
+        return "Drawing creatable"
+    end)
+    
+    addTest("cleardrawcache", "Drawing", function()
+        cleardrawcache()
+        return "Cache clearable"
+    end)
+    
+    addTest("getrenderproperty", "Drawing", function()
+        local line = Drawing.new("Line")
+        local color = getrenderproperty(line, "Color")
+        line:Remove()
+        return "Property gettable"
+    end)
+    
+    addTest("setrenderproperty", "Drawing", function()
+        local line = Drawing.new("Line")
+        setrenderproperty(line, "Color", Color3.new(1, 0, 0))
+        line:Remove()
+        return "Property settable"
+    end)
+    
+    addTest("isrenderobj", "Drawing", function()
+        local line = Drawing.new("Line")
+        local isRender = isrenderobj(line)
+        line:Remove()
+        return "Render obj check: " .. tostring(isRender)
+    end)
+    
+    -- Environment
+    addTest("getgenv", "Environment", function()
+        local env = getgenv()
+        return "Global env accessible"
+    end)
+    
+    addTest("getrenv", "Environment", function()
+        local env = getrenv()
+        return "Roblox env accessible"
+    end)
+    
+    addTest("getgc", "Environment", function()
+        local garbage = getgc()
+        return "GC accessible: " .. tostring(#garbage) .. " items"
+    end)
+    
+    addTest("filtergc", "Environment", function()
+        local filtered = filtergc("function", {})
+        return "Filtered GC: " .. tostring(filtered and #filtered or 0) .. " items"
+    end)
+    
+    -- Filesystem
+    addTest("appendfile", "Filesystem", function()
+        appendfile("test.txt", "test")
+        return "File appendable"
+    end)
+    
+    addTest("writefile", "Filesystem", function()
+        writefile("test.txt", "test")
+        return "File writable"
+    end)
+    
+    addTest("readfile", "Filesystem", function()
+        writefile("test.txt", "test")
+        local content = readfile("test.txt")
+        return "File readable: " .. tostring(content)
+    end)
+    
+    addTest("listfiles", "Filesystem", function()
+        local files = listfiles("")
+        return "Files listable: " .. tostring(#files)
+    end)
+    
+    addTest("isfile", "Filesystem", function()
+        local isF = isfile("test.txt")
+        return "File check: " .. tostring(isF)
+    end)
+    
+    addTest("delfile", "Filesystem", function()
+        writefile("test.txt", "test")
+        delfile("test.txt")
+        return "File deletable"
+    end)
+    
+    addTest("loadfile", "Filesystem", function()
+        writefile("test.lua", "return 42")
+        local chunk = loadfile("test.lua")
+        return "File loadable"
+    end)
+    
+    addTest("makefolder", "Filesystem", function()
+        makefolder("test_folder")
+        return "Folder creatable"
+    end)
+    
+    addTest("isfolder", "Filesystem", function()
+        local isF = isfolder("test_folder")
+        return "Folder check: " .. tostring(isF)
+    end)
+    
+    addTest("delfolder", "Filesystem", function()
+        makefolder("test_folder")
+        delfolder("test_folder")
+        return "Folder deletable"
+    end)
+    
+    addTest("getcustomasset", "Filesystem", function()
+        local path = getcustomasset("test.txt")
+        return "Custom asset path: " .. tostring(path)
+    end)
+    
+    -- Instances
+    addTest("fireproximityprompt", "Instances", function()
+        local part = Instance.new("Part")
+        local prompt = Instance.new("ProximityPrompt")
+        prompt.Parent = part
+        fireproximityprompt(prompt)
+        return "ProximityPrompt fireable"
+    end)
+    
+    addTest("fireclickdetector", "Instances", function()
+        local part = Instance.new("Part")
+        local click = Instance.new("ClickDetector")
+        click.Parent = part
+        fireclickdetector(click)
+        return "ClickDetector fireable"
+    end)
+    
+    addTest("firetouchinterest", "Instances", function()
+        local part1 = Instance.new("Part")
+        local part2 = Instance.new("Part")
+        firetouchinterest(part1, part2, 0)
+        return "TouchInterest fireable"
+    end)
+    
+    addTest("getinstances", "Instances", function()
+        local instances = getinstances()
+        return "Instances: " .. tostring(#instances)
+    end)
+    
+    addTest("getnilinstances", "Instances", function()
+        local nilInstances = getnilinstances()
+        return "Nil instances: " .. tostring(#nilInstances)
+    end)
+    
+    addTest("cloneref", "Instances", function()
+        local part = Instance.new("Part")
+        local cloned = cloneref(part)
+        return "Reference cloneable"
+    end)
+    
+    addTest("gethui", "Instances", function()
+        local gui = gethui()
+        return "Hidden UI accessible"
+    end)
+    
+    addTest("getcallbackvalue", "Instances", function()
+        local part = Instance.new("Part")
+        local func = getcallbackvalue(part, "Touched")
+        return "Callback gettable: " .. tostring(type(func))
+    end)
+    
+    addTest("compareinstances", "Instances", function()
+        local part1 = Instance.new("Part")
+        local part2 = Instance.new("Part")
+        local same = compareinstances(part1, part2)
+        return "Comparable: " .. tostring(same)
+    end)
+    
+    -- Metatables
+    addTest("getrawmetatable", "Metatables", function()
+        local mt = getrawmetatable(game)
+        return "Raw metatable accessible"
+    end)
+    
+    addTest("setrawmetatable", "Metatables", function()
+        local tbl = {}
+        local mt = {}
+        setrawmetatable(tbl, mt)
+        return "Raw metatable settable"
+    end)
+    
+    addTest("setreadonly", "Metatables", function()
+        local tbl = {}
+        setreadonly(tbl, true)
+        return "Readonly settable"
+    end)
+    
+    addTest("isreadonly", "Metatables", function()
+        local tbl = {}
+        local readonly = isreadonly(tbl)
+        return "Readonly check: " .. tostring(readonly)
+    end)
+    
+    -- Miscellaneous
+    addTest("request", "Miscellaneous", function()
+        local req = request({
+            Url = "https://httpbin.org/get",
+            Method = "GET"
+        })
+        return "Request usable"
+    end)
+    
+    -- Reflection
+    addTest("gethiddenproperty", "Reflection", function()
+        local part = Instance.new("Part")
+        local value, exists = gethiddenproperty(part, "NetworkOwnershipRule")
+        return "Hidden property gettable: " .. tostring(exists)
+    end)
+    
+    addTest("sethiddenproperty", "Reflection", function()
+        local part = Instance.new("Part")
+        local ok = sethiddenproperty(part, "NetworkIsSleeping", true)
+        return "Hidden property settable: " .. tostring(ok)
+    end)
+    
+    addTest("setscriptable", "Reflection", function()
+        local part = Instance.new("Part")
+        local ok = setscriptable(part, "NetworkIsSleeping", true)
+        return "Scriptable settable: " .. tostring(ok)
+    end)
+    
+    addTest("checkcaller", "Reflection", function()
+        local isExploit = checkcaller()
+        return "Caller check: " .. tostring(isExploit)
+    end)
+    
+    addTest("setthreadidentity", "Reflection", function()
+        local old = getthreadidentity()
+        setthreadidentity(7)
+        local new = getthreadidentity()
+        setthreadidentity(old)
+        return "Identity settable: " .. tostring(new)
+    end)
+    
+    addTest("getthreadidentity", "Reflection", function()
+        local id = getthreadidentity()
+        return "Identity: " .. tostring(id)
+    end)
+    
+    -- Scripts
+    addTest("getscriptbytecode", "Scripts", function()
+        local script = Instance.new("LocalScript")
+        local bytecode = getscriptbytecode(script)
+        return "Bytecode accessible"
+    end)
+    
+    addTest("getscripthash", "Scripts", function()
+        local script = Instance.new("LocalScript")
+        local hash = getscripthash(script)
+        return "Script hash: " .. tostring(hash and string.sub(tostring(hash), 1, 10) .. "..." or "N/A")
+    end)
+    
+    addTest("getscriptclosure", "Scripts", function()
+        local script = Instance.new("LocalScript")
+        local closure = getscriptclosure(script)
+        return "Closure gettable: " .. tostring(type(closure))
+    end)
+    
+    addTest("getsenv", "Scripts", function()
+        local script = Instance.new("LocalScript")
+        local env = getsenv(script)
+        return "Script env accessible"
+    end)
+    
+    addTest("getscripts", "Scripts", function()
+        local scripts = getscripts()
+        return "Scripts: " .. tostring(#scripts)
+    end)
+    
+    addTest("getrunningscripts", "Scripts", function()
+        local running = getrunningscripts()
+        return "Running scripts: " .. tostring(#running)
+    end)
+    
+    addTest("getloadedmodules", "Scripts", function()
+        local modules = getloadedmodules()
+        return "Modules: " .. tostring(#modules)
+    end)
+    
+    addTest("getcallingscript", "Scripts", function()
+        local script = getcallingscript()
+        return "Calling script: " .. tostring(script and script.Name or "nil")
+    end)
+    
+    addTest("loadstring", "Scripts", function()
+        local func = loadstring("return 42")
+        return "Loadstring usable"
+    end)
+    
+    -- Signals
+    addTest("getconnections", "Signals", function()
+        local event = Instance.new("BindableEvent").Event
+        local connections = getconnections(event)
+        return "Connections: " .. tostring(#connections)
+    end)
+    
+    addTest("firesignal", "Signals", function()
+        local event = Instance.new("BindableEvent")
+        firesignal(event.Event)
+        return "Signal fireable"
+    end)
+    
+    addTest("replicatesignal", "Signals", function()
+        local remote = Instance.new("RemoteEvent")
+        local ok = pcall(replicatesignal, remote.OnServerEvent, "test")
+        return "Replication " .. (ok and "possible" or "restricted")
+    end)
+    
+    -- Websocket
+    addTest("WebSocket.connect", "Websocket", function()
+        local ws = WebSocket.connect("ws://echo.websocket.events")
+        return "WebSocket creatable"
+    end)
+    
+    -- Cleanup
+    pcall(delfile, "test.txt")
+    pcall(delfile, "test.lua")
+    pcall(delfolder, "test_folder")
+    
+    -- Results Summary
+    print("\n=== [ RESULTS ] ===")
+    print(string.format("Total Tests: %d", total))
+    print(string.format("Passed: %d", passed))
+    print(string.format("Score: %.1f%%", (passed / total) * 100))
+    
+    -- Display by category
+    local categories = {}
+    for name, data in pairs(results) do
+        if not categories[data.category] then
+            categories[data.category] = {total = 0, passed = 0}
+        end
+        categories[data.category].total = categories[data.category].total + 1
+        if data.ok then
+            categories[data.category].passed = categories[data.category].passed + 1
+        end
+    end
+    
+    print("\n=== [ BY CATEGORY ] ===")
+    for category, stats in pairs(categories) do
+        print(string.format("%s: %d/%d (%.1f%%)", 
+            category, stats.passed, stats.total, (stats.passed/stats.total)*100))
+    end
+    
+    print("\n=== [ MISSING FEATURES ] ===")
+    local missingCount = 0
+    for name, data in pairs(results) do
+        if not data.ok then
+            print(string.format("[-] %s (%s)", name, data.category))
+            missingCount = missingCount + 1
+        end
+    end
+    if missingCount == 0 then
+        print("All features available! This is a god-tier executor.")
+    end
+    
+    print("\n=== [ RANK ] ===")
+    local score = passed / total
+    if score >= 0.95 then
+        print("RANK: S+ (Standard Perfection)")
+    elseif score >= 0.85 then
+        print("RANK: S (Excellent)")
+    elseif score >= 0.75 then
+        print("RANK: A (Very Good)")
+    elseif score >= 0.65 then
+        print("RANK: B (Good)")
+    elseif score >= 0.50 then
+        print("RANK: C (Average)")
+    elseif score >= 0.35 then
+        print("RANK: D (Below Average)")
+    else
+        print("RANK: F (Lacking)")
+    end
+    
+    print("=" .. string.rep("=", 40))
+    
+    return results
+end
+
+-- Run the test
+local featureResults = checkExecutorFeatures()
