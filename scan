@@ -1,243 +1,157 @@
--- Universal Game Structure Scanner
--- Works with ANY executor (even broken ones)
+-- SIMPLEST GAME SCANNER - WON'T CRASH
+print("📡 SIMPLE GAME SCAN")
+print("=" .. string.rep("=", 40))
 
-local function safeGetService(name)
-    local success, service = pcall(function()
-        return game:GetService(name)
-    end)
-    return success and service or nil
-end
+local info = {}
 
-local function hasFunction(name)
-    return type(_G[name]) == "function" or 
-           type(getgenv and getgenv()[name]) == "function"
-end
+-- 1. BASIC GAME INFO
+table.insert(info, "GAME INFO:")
+table.insert(info, "PlaceId: " .. tostring(game.PlaceId))
+table.insert(info, "JobId: " .. tostring(game.JobId))
+table.insert(info, "")
 
-local function tryCopyToClipboard(text)
-    -- Try ALL possible clipboard methods
-    local methods = {"setclipboard", "toclipboard", "set_clipboard", "clipboard_set"}
+-- 2. PLAYERS (most important)
+local playersSuccess, players = pcall(function() return game:GetService("Players") end)
+if playersSuccess and players then
+    table.insert(info, "PLAYERS:")
+    local allPlayers = players:GetPlayers()
+    table.insert(info, "Total: " .. #allPlayers)
     
-    for _, methodName in ipairs(methods) do
-        local func = _G[methodName] or (getgenv and getgenv()[methodName])
-        if type(func) == "function" then
-            local success = pcall(func, text)
-            if success then
-                print("✅ Copied using " .. methodName)
-                return true
-            end
-        end
-    end
-    
-    -- Try writefile as backup
-    if hasFunction("writefile") then
-        local success = pcall(writefile, "game_scan.txt", text)
-        if success then
-            print("✅ Saved to game_scan.txt")
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Main scanning function (no classes, just simple functions)
-local function scanGameStructure()
-    local output = {}
-    local maxDepth = 3
-    local maxChildren = 30
-    
-    -- Helper functions
-    local function getIcon(className)
-        local icons = {
-            Folder = "📁",
-            Model = "🏗️",
-            Part = "⬜",
-            MeshPart = "🔷",
-            Script = "📜",
-            LocalScript = "📜",
-            ModuleScript = "📦",
-            RemoteEvent = "🔗",
-            RemoteFunction = "🔌",
-            BindableEvent = "📡",
-            Tool = "🛠️",
-            Player = "👤",
-            Sound = "🔊",
-        }
-        return icons[className] or "•"
-    end
-    
-    local function isImportant(instance)
-        local importantTypes = {
-            "RemoteEvent", "RemoteFunction", "BindableEvent",
-            "Tool", "Model", "Folder",
-            "Script", "LocalScript", "ModuleScript",
-            "Player"
-        }
+    local me = players.LocalPlayer
+    if me then
+        table.insert(info, "You: " .. me.Name)
+        table.insert(info, "UserId: " .. tostring(me.UserId))
         
-        for _, typeName in ipairs(importantTypes) do
-            if instance:IsA(typeName) then
-                return true
-            end
-        end
-        
-        return false
-    end
-    
-    local function scanChildren(parent, depth, path)
-        if depth > maxDepth then return end
-        
-        local children = parent:GetChildren()
-        local count = 0
-        
-        for _, child in ipairs(children) do
-            if count >= maxChildren then
-                table.insert(output, string.rep("  ", depth) .. "📁 ... (" .. (#children - count) .. " more)")
-                break
-            end
+        -- Check character
+        if me.Character then
+            table.insert(info, "Character: YES")
             
-            local icon = getIcon(child.ClassName)
-            local line = string.rep("  ", depth) .. icon .. " " .. child.Name .. " (" .. child.ClassName .. ")"
-            table.insert(output, line)
-            
-            -- Special handling for important types
-            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                table.insert(output, string.rep("  ", depth+1) .. "🔗 Path: " .. (path or "") .. "." .. child.Name)
-            elseif (child:IsA("Folder") or child:IsA("Model")) and depth < maxDepth then
-                scanChildren(child, depth + 1, (path or "") .. "." .. child.Name)
-            end
-            
-            count = count + 1
-        end
-    end
-    
-    -- Start scanning
-    table.insert(output, "=== GAME STRUCTURE SCAN ===")
-    table.insert(output, "Time: " .. os.date("%H:%M:%S"))
-    table.insert(output, "")
-    
-    -- Scan core services
-    local servicesToScan = {
-        "Workspace",
-        "Players", 
-        "ReplicatedStorage",
-        "ReplicatedFirst",
-        "Lighting",
-        "Teams",
-        "SoundService"
-    }
-    
-    for _, serviceName in ipairs(servicesToScan) do
-        local service = safeGetService(serviceName)
-        if service then
-            table.insert(output, "")
-            table.insert(output, "📦 " .. serviceName .. ":")
-            table.insert(output, string.rep("-", 30))
-            
-            if serviceName == "Workspace" or serviceName == "Players" or serviceName == "ReplicatedStorage" then
-                scanChildren(service, 1, serviceName)
-            else
-                -- Quick scan for other services
-                local children = service:GetChildren()
-                local important = 0
-                for _, child in ipairs(children) do
-                    if isImportant(child) then
-                        local icon = getIcon(child.ClassName)
-                        table.insert(output, "  " .. icon .. " " .. child.Name .. " (" .. child.ClassName .. ")")
-                        important = important + 1
-                    end
-                end
-                table.insert(output, "  Total: " .. #children .. " items, " .. important .. " important")
-            end
-        end
-    end
-    
-    -- Add player info
-    table.insert(output, "")
-    table.insert(output, "=== PLAYER INFO ===")
-    local players = safeGetService("Players")
-    if players then
-        local playerList = players:GetPlayers()
-        table.insert(output, "Online: " .. #playerList)
-        
-        local localPlayer = players.LocalPlayer
-        if localPlayer then
-            table.insert(output, "You: " .. localPlayer.Name)
-            if localPlayer.Character then
-                table.insert(output, "Character: YES")
-                
-                -- Check for tools
-                local tools = {}
-                for _, child in ipairs(localPlayer.Character:GetChildren()) do
+            -- Check for ONE tool only (no loops that could crash)
+            local charChildren = me.Character:GetChildren()
+            if #charChildren > 0 then
+                for i = 1, math.min(3, #charChildren) do
+                    local child = charChildren[i]
                     if child:IsA("Tool") then
-                        table.insert(tools, child.Name)
+                        table.insert(info, "Tool: " .. child.Name)
+                        break  -- Only show first tool
                     end
                 end
-                
-                if #tools > 0 then
-                    table.insert(output, "Tools: " .. table.concat(tools, ", "))
-                end
-            else
-                table.insert(output, "Character: NO (dead/respawning)")
+            end
+        else
+            table.insert(info, "Character: NO")
+        end
+    end
+    table.insert(info, "")
+end
+
+-- 3. WORKSPACE (limited)
+local wsSuccess, workspace = pcall(function() return game:GetService("Workspace") end)
+if wsSuccess and workspace then
+    table.insert(info, "WORKSPACE:")
+    local children = workspace:GetChildren()
+    table.insert(info, "Items: " .. #children)
+    
+    -- Show ONLY first 3 important items
+    local shown = 0
+    for i = 1, math.min(5, #children) do
+        local child = children[i]
+        if child:IsA("Model") or child:IsA("Tool") then
+            table.insert(info, "  • " .. child.Name .. " (" .. child.ClassName .. ")")
+            shown = shown + 1
+            if shown >= 3 then break end
+        end
+    end
+    table.insert(info, "")
+end
+
+-- 4. REPLICATEDSTORAGE (just count remotes)
+local rsSuccess, rs = pcall(function() return game:GetService("ReplicatedStorage") end)
+if rsSuccess and rs then
+    table.insert(info, "REPLICATEDSTORAGE:")
+    local children = rs:GetChildren()
+    table.insert(info, "Items: " .. #children)
+    
+    -- Count remotes without looping through all
+    local remoteCount = 0
+    for i = 1, math.min(10, #children) do
+        local child = children[i]
+        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+            remoteCount = remoteCount + 1
+            if remoteCount <= 2 then  -- Show first 2 only
+                table.insert(info, "  • " .. child.Name .. " (" .. child.ClassName .. ")")
             end
         end
     end
     
-    -- Add summary
-    table.insert(output, "")
-    table.insert(output, "=== QUICK STATS ===")
-    
-    local function countType(serviceName, className)
-        local service = safeGetService(serviceName)
-        if not service then return 0 end
-        
-        local count = 0
-        for _, child in ipairs(service:GetDescendants()) do
-            if child:IsA(className) then
-                count = count + 1
-            end
-        end
-        return count
+    if remoteCount > 2 then
+        table.insert(info, "  • ... and " .. (remoteCount - 2) .. " more remotes")
     end
-    
-    local remoteEvents = countType("ReplicatedStorage", "RemoteEvent") + 
-                        countType("Workspace", "RemoteEvent")
-    local remoteFunctions = countType("ReplicatedStorage", "RemoteFunction") + 
-                           countType("Workspace", "RemoteFunction")
-    local tools = countType("Workspace", "Tool")
-    
-    table.insert(output, "🔗 RemoteEvents: " .. remoteEvents)
-    table.insert(output, "🔌 RemoteFunctions: " .. remoteFunctions)
-    table.insert(output, "🛠️ Tools: " .. tools)
-    
-    -- Add copy instructions
-    table.insert(output, "")
-    table.insert(output, "=== TO COPY ===")
-    table.insert(output, "1. Select all text above")
-    table.insert(output, "2. Copy (Ctrl+C)")
-    table.insert(output, "3. Paste it to me!")
-    
-    return table.concat(output, "\n")
+    table.insert(info, "")
 end
 
--- Main execution
-print("🎮 Universal Game Scanner")
-print("Scanning...")
-print("")
+-- 5. CURRENT TOOLS/WEAPONS (if any)
+table.insert(info, "CURRENT TOOLS SEARCH:")
+local foundTools = {}
 
-local result = scanGameStructure()
-
--- Display result
-print(result)
-print("")
-print(string.rep("=", 50))
-
--- Try to copy automatically
-local copied = tryCopyToClipboard(result)
-if not copied then
-    print("⚠️  Could not copy automatically")
-    print("📋 Please MANUALLY select and copy the text above")
+-- Check workspace for tools with "Gun" in name
+if wsSuccess and workspace then
+    local children = workspace:GetChildren()
+    for i = 1, math.min(20, #children) do
+        local child = children[i]
+        if child:IsA("Tool") and (child.Name:find("Gun") or child.Name:find("Weapon") or child.Name:find("Tool")) then
+            table.insert(foundTools, child.Name)
+            if #foundTools >= 3 then break end
+        end
+    end
 end
 
-print("Lines: " .. select(2, result:gsub("\n", "\n")))
-print("Chars: " .. #result)
-print(string.rep("=", 50))
+if #foundTools > 0 then
+    table.insert(info, "Found tools: " .. table.concat(foundTools, ", "))
+else
+    table.insert(info, "No obvious tools found")
+end
+
+-- OUTPUT
+local output = table.concat(info, "\n")
+print(output)
+
+-- TRY TO SAVE (but don't crash if it fails)
+print("\n" .. string.rep("-", 40))
+print("SAVING ATTEMPT...")
+
+local saveSuccess = false
+
+-- Method 1: setclipboard
+if type(setclipboard) == "function" then
+    local ok = pcall(setclipboard, output)
+    if ok then
+        print("✅ Copied to clipboard!")
+        saveSuccess = true
+    end
+end
+
+-- Method 2: writefile
+if not saveSuccess and type(writefile) == "function" then
+    local ok = pcall(writefile, "game_info.txt", output)
+    if ok then
+        print("✅ Saved to game_info.txt")
+        saveSuccess = true
+    end
+end
+
+-- Method 3: rconsoleprint (if available)
+if not saveSuccess and type(rconsoleprint) == "function" then
+    pcall(rconsoleprint, output)
+    print("✅ Printed to console")
+    saveSuccess = true
+end
+
+if not saveSuccess then
+    print("⚠️  Could not save automatically")
+    print("📋 Please MANUALLY copy the text above")
+end
+
+print("\n" .. string.rep("=", 40))
+print("SCAN COMPLETE!")
+print("Lines: " .. (#info))
+print(string.rep("=", 40))
