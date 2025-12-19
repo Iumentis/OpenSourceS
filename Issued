@@ -1,89 +1,159 @@
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local localPlayer = Players.LocalPlayer
+local function copyToClipboard(text)
+    -- Try to use the executor's clipboard function
+    if writeclipboard then
+        writeclipboard(text)
+        return true
+    elseif setclipboard then
+        setclipboard(text)
+        return true
+    else
+        -- Fallback: print and ask user to manually copy
+        print("\n=== COPY THE TEXT BELOW ===\n")
+        print(text)
+        print("\n=== END OF TEXT ===\n")
+        return false
+    end
+end
 
--- =============================================
--- 1. THE VOXEL & RAYCAST SPOOFER
--- =============================================
--- This targets the exact logic in your DrownUtils source
-local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
-local oldIndex = mt.__index
-setreadonly(mt, false)
+local function formatItem(item, indent)
+    local result = ""
+    local prefix = string.rep("  ", indent)
+    
+    result = result .. prefix .. item.Name .. " [" .. item.ClassName .. "]"
+    
+    -- Add important properties for certain types
+    if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
+        result = result .. " (Network)"
+    elseif item:IsA("ModuleScript") then
+        -- Try to get source info if possible
+        local success, source = pcall(function() return item.Source:sub(1, 50) end)
+        if success then
+            result = result .. " -> " .. source:gsub("\n", " "):gsub("\r", "") .. "..."
+        end
+    elseif item:IsA("Folder") then
+        result = result .. "/"
+    end
+    
+    return result
+end
 
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-
-    -- Hook ReadVoxels: The game uses this to find Water voxels
-    if method == "ReadVoxels" and self == workspace.Terrain then
-        local material, occupancy = oldNamecall(self, ...)
+local function scanReplicatedStorage()
+    local rs = game:GetService("ReplicatedStorage")
+    local output = {}
+    local itemCount = 0
+    
+    table.insert(output, "=== REPLICATEDSTORAGE STRUCTURE ===")
+    table.insert(output, "Scanned at: " .. os.date("%H:%M:%S"))
+    table.insert(output, "")
+    
+    -- First pass: Get all important items
+    local allItems = {}
+    
+    local function processItem(item, depth)
+        itemCount = itemCount + 1
         
-        -- We loop through the returned voxel data and swap Water for Air
-        for x = 1, material.Size.X do
-            for y = 1, material.Size.Y do
-                for z = 1, material.Size.Z do
-                    if material[x][y][z] == Enum.Material.Water then
-                        material[x][y][z] = Enum.Material.Air
-                    end
-                end
-            end
+        -- Skip certain uninteresting items
+        if item:IsA("Sound") or item:IsA("Animation") or item:IsA("Decal") then
+            table.insert(allItems, {item = item, depth = depth, type = "asset"})
+            return
         end
-        return material, occupancy
-    end
-
-    -- Hook Raycast: The game uses this as a secondary check
-    if method == "Raycast" or method == "FindPartOnRayWithIgnoreList" then
-        local result = oldNamecall(self, ...)
-        if result and result.Material == Enum.Material.Water then
-            -- Tell the game we hit nothing (nil) instead of water
-            return nil
-        end
-    end
-
-    return oldNamecall(self, table.unpack(args))
-end)
-
-setreadonly(mt, true)
-
--- =============================================
--- 2. ATTRIBUTE LOCKER
--- =============================================
--- DrownConsts shows the attribute name is "DrownPercent"
--- We lock this to 0 locally so the UI never shows the blue bar.
-RunService.Heartbeat:Connect(function()
-    if localPlayer:GetAttribute("DrownPercent") ~= 0 then
-        localPlayer:SetAttribute("DrownPercent", 0)
-    end
-end)
-
--- =============================================
--- 3. PARTICLE & UI CLEANUP
--- =============================================
--- This stops the "AirBubbles" particles from appearing on your head
-local function CleanEffects()
-    local char = localPlayer.Character
-    if char then
-        local head = char:FindFirstChild("Head")
-        if head then
-            for _, v in pairs(head:GetChildren()) do
-                if v.Name == "AirBubbles" then
-                    v:Destroy()
-                end
+        
+        -- Add this item
+        table.insert(allItems, {item = item, depth = depth, type = "important"})
+        
+        -- Recurse into containers
+        if item:IsA("Folder") or item:IsA("Model") or item.Name == "ClientServices" then
+            for _, child in pairs(item:GetChildren()) do
+                processItem(child, depth + 1)
             end
         end
     end
     
-    local pg = localPlayer:FindFirstChild("PlayerGui")
-    if pg then
-        local drownGui = pg:FindFirstChild("DrownGui")
-        if drownGui then
-            drownGui.Enabled = false
+    -- Start scanning
+    for _, item in pairs(rs:GetChildren()) do
+        processItem(item, 0)
+    end
+    
+    -- Group by type for better organization
+    local remoteEvents = {}
+    local remoteFunctions = {}
+    local moduleScripts = {}
+    local folders = {}
+    local others = {}
+    
+    for _, data in pairs(allItems) do
+        local item = data.item
+        
+        if item:IsA("RemoteEvent") then
+            table.insert(remoteEvents, data)
+        elseif item:IsA("RemoteFunction") then
+            table.insert(remoteFunctions, data)
+        elseif item:IsA("ModuleScript") then
+            table.insert(moduleScripts, data)
+        elseif item:IsA("Folder") then
+            table.insert(folders, data)
+        elseif data.type == "important" then
+            table.insert(others, data)
         end
     end
+    
+    -- Format output by category
+    table.insert(output, "=== REMOTE EVENTS ===")
+    for _, data in pairs(remoteEvents) do
+        table.insert(output, formatItem(data.item, data.depth))
+    end
+    
+    table.insert(output, "")
+    table.insert(output, "=== REMOTE FUNCTIONS ===")
+    for _, data in pairs(remoteFunctions) do
+        table.insert(output, formatItem(data.item, data.depth))
+    end
+    
+    table.insert(output, "")
+    table.insert(output, "=== MODULE SCRIPTS ===")
+    for _, data in pairs(moduleScripts) do
+        table.insert(output, formatItem(data.item, data.depth))
+    end
+    
+    table.insert(output, "")
+    table.insert(output, "=== FOLDERS ===")
+    for _, data in pairs(folders) do
+        table.insert(output, formatItem(data.item, data.depth))
+    end
+    
+    table.insert(output, "")
+    table.insert(output, "=== OTHER IMPORTANT ITEMS ===")
+    for _, data in pairs(others) do
+        table.insert(output, formatItem(data.item, data.depth))
+    end
+    
+    -- Summary
+    table.insert(output, "")
+    table.insert(output, "=== SUMMARY ===")
+    table.insert(output, "Total items scanned: " .. itemCount)
+    table.insert(output, "RemoteEvents: " .. #remoteEvents)
+    table.insert(output, "RemoteFunctions: " .. #remoteFunctions)
+    table.insert(output, "ModuleScripts: " .. #moduleScripts)
+    table.insert(output, "Folders: " .. #folders)
+    
+    -- Convert to string
+    local outputText = table.concat(output, "\n")
+    
+    -- Copy to clipboard
+    local success = copyToClipboard(outputText)
+    
+    if success then
+        print("✓ ReplicatedStorage structure copied to clipboard!")
+        print("✓ " .. #remoteEvents .. " RemoteEvents")
+        print("✓ " .. #remoteFunctions .. " RemoteFunctions") 
+        print("✓ " .. #moduleScripts .. " ModuleScripts")
+        print("\nPaste it here when you're ready.")
+    else
+        print("Please copy the printed text above.")
+    end
+    
+    return outputText
 end
 
-RunService.RenderStepped:Connect(CleanEffects)
-
-print("--- [BYPASS ACTIVE] DrownUtils Logic Spoofed ---")
+-- Run the scanner
+scanReplicatedStorage()
