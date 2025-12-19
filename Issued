@@ -1,159 +1,400 @@
-local function copyToClipboard(text)
-    -- Try to use the executor's clipboard function
-    if writeclipboard then
-        writeclipboard(text)
-        return true
-    elseif setclipboard then
-        setclipboard(text)
-        return true
-    else
-        -- Fallback: print and ask user to manually copy
-        print("\n=== COPY THE TEXT BELOW ===\n")
-        print(text)
-        print("\n=== END OF TEXT ===\n")
-        return false
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local CombatEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("MadworkCombat_CombatEvent")
+
+-- Configuration
+local AIMBOT = {
+    Enabled = false,
+    ToggleKey = Enum.KeyCode.E,
+    FOV = 30,
+    SilentAim = true,
+    AimPart = "Head",
+    TeamCheck = true,
+    MaxDistance = 500,
+    Prediction = 0.15,
+    VisualizeFOV = true,
+}
+
+-- Target tracking system
+local Targets = {}
+local TargetConnections = {}
+local FOVCircle = nil
+
+-- Initialize
+local function initialize()
+    -- Create FOV visualization
+    if AIMBOT.VisualizeFOV then
+        FOVCircle = Drawing.new("Circle")
+        FOVCircle.Visible = AIMBOT.Enabled
+        FOVCircle.Thickness = 2
+        FOVCircle.Color = AIMBOT.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        FOVCircle.Transparency = 0.5
+        FOVCircle.Radius = AIMBOT.FOV
+        FOVCircle.Filled = false
+    end
+    
+    -- Setup keybind
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not gameProcessed and input.KeyCode == AIMBOT.ToggleKey then
+            AIMBOT.Enabled = not AIMBOT.Enabled
+            print("Silent Aim:", AIMBOT.Enabled and "ENABLED" : "DISABLED")
+            
+            if FOVCircle then
+                FOVCircle.Visible = AIMBOT.Enabled
+                FOVCircle.Color = AIMBOT.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            end
+        end
+    end)
+    
+    -- Auto-update player tracking
+    Players.PlayerAdded:Connect(trackPlayer)
+    Players.PlayerRemoving:Connect(untrackPlayer)
+    
+    -- Track existing players
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            trackPlayer(player)
+        end
+    end
+    
+    -- Update FOV circle position
+    if FOVCircle then
+        RunService.RenderStepped:Connect(function()
+            local mousePos = UserInputService:GetMouseLocation()
+            FOVCircle.Position = mousePos
+        end)
     end
 end
 
-local function formatItem(item, indent)
-    local result = ""
-    local prefix = string.rep("  ", indent)
+-- Track a player
+function trackPlayer(player)
+    if Targets[player] then return end
     
-    result = result .. prefix .. item.Name .. " [" .. item.ClassName .. "]"
+    Targets[player] = {
+        Player = player,
+        Character = nil,
+        LastValidPosition = nil,
+        IsOnSameTeam = false
+    }
     
-    -- Add important properties for certain types
-    if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
-        result = result .. " (Network)"
-    elseif item:IsA("ModuleScript") then
-        -- Try to get source info if possible
-        local success, source = pcall(function() return item.Source:sub(1, 50) end)
-        if success then
-            result = result .. " -> " .. source:gsub("\n", " "):gsub("\r", "") .. "..."
-        end
-    elseif item:IsA("Folder") then
-        result = result .. "/"
+    -- Monitor character changes
+    TargetConnections[player] = {
+        CharacterAdded = player.CharacterAdded:Connect(function(char)
+            Targets[player].Character = char
+            trackCharacter(char, player)
+        end),
+        
+        CharacterRemoving = player.CharacterRemoving:Connect(function()
+            Targets[player].Character = nil
+        end),
+        
+        TeamChanged = player:GetPropertyChangedSignal("Team"):Connect(function()
+            updateTeamStatus(player)
+        end)
+    }
+    
+    -- Initial character check
+    if player.Character then
+        Targets[player].Character = player.Character
+        trackCharacter(player.Character, player)
     end
     
-    return result
+    updateTeamStatus(player)
 end
 
-local function scanReplicatedStorage()
-    local rs = game:GetService("ReplicatedStorage")
-    local output = {}
-    local itemCount = 0
+-- Untrack a player
+function untrackPlayer(player)
+    if TargetConnections[player] then
+        for _, conn in pairs(TargetConnections[player]) do
+            conn:Disconnect()
+        end
+        TargetConnections[player] = nil
+    end
+    Targets[player] = nil
+end
+
+-- Track character parts
+function trackCharacter(character, player)
+    local connection
+    connection = character.ChildAdded:Connect(function(child)
+        if child.Name == AIMBOT.AimPart then
+            Targets[player].AimPart = child
+            
+            -- Monitor position changes
+            if child:IsA("BasePart") then
+                Targets[player].PositionConnection = child:GetPropertyChangedSignal("Position"):Connect(function()
+                    Targets[player].LastValidPosition = child.Position
+                end)
+            end
+        end
+    end)
     
-    table.insert(output, "=== REPLICATEDSTORAGE STRUCTURE ===")
-    table.insert(output, "Scanned at: " .. os.date("%H:%M:%S"))
-    table.insert(output, "")
+    table.insert(TargetConnections[player], connection)
     
-    -- First pass: Get all important items
-    local allItems = {}
+    -- Check existing parts
+    local aimPart = character:FindFirstChild(AIMBOT.AimPart)
+    if aimPart then
+        Targets[player].AimPart = aimPart
+        Targets[player].LastValidPosition = aimPart.Position
+    end
+end
+
+-- Update team status with multiple team check methods
+function updateTeamStatus(player)
+    if not AIMBOT.TeamCheck then
+        Targets[player].IsOnSameTeam = false
+        return
+    end
     
-    local function processItem(item, depth)
-        itemCount = itemCount + 1
-        
-        -- Skip certain uninteresting items
-        if item:IsA("Sound") or item:IsA("Animation") or item:IsA("Decal") then
-            table.insert(allItems, {item = item, depth = depth, type = "asset"})
-            return
+    local sameTeam = false
+    
+    -- Method 1: Team property
+    if LocalPlayer.Team and player.Team then
+        sameTeam = LocalPlayer.Team == player.Team
+    end
+    
+    -- Method 2: TeamColor (for older games)
+    if not sameTeam and LocalPlayer.TeamColor and player.TeamColor then
+        sameTeam = LocalPlayer.TeamColor == player.TeamColor
+    end
+    
+    -- Method 3: Check if player is in friends list (optional)
+    if not sameTeam and game:GetService("FriendsService"):IsFriendsWith(LocalPlayer.UserId, player.UserId) then
+        sameTeam = true -- Treat friends as same team
+    end
+    
+    Targets[player].IsOnSameTeam = sameTeam
+end
+
+-- Get best target with all checks
+function getBestTarget()
+    if not AIMBOT.Enabled then return nil end
+    
+    local bestTarget = nil
+    local closestDistance = AIMBOT.FOV
+    local mousePos = UserInputService:GetMouseLocation()
+    local camera = workspace.CurrentCamera
+    
+    for _, targetData in pairs(Targets) do
+        -- Team check
+        if AIMBOT.TeamCheck and targetData.IsOnSameTeam then
+            continue
         end
         
-        -- Add this item
-        table.insert(allItems, {item = item, depth = depth, type = "important"})
+        -- Character/health check
+        local character = targetData.Character
+        if not character then continue end
         
-        -- Recurse into containers
-        if item:IsA("Folder") or item:IsA("Model") or item.Name == "ClientServices" then
-            for _, child in pairs(item:GetChildren()) do
-                processItem(child, depth + 1)
+        local humanoid = character:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        
+        -- Aim part check
+        local aimPart = targetData.AimPart or character:FindFirstChild(AIMBOT.AimPart)
+        if not aimPart then continue end
+        
+        -- Distance check
+        local distance = (aimPart.Position - camera.CFrame.Position).Magnitude
+        if distance > AIMBOT.MaxDistance then continue end
+        
+        -- FOV check
+        local screenPoint, onScreen = camera:WorldToViewportPoint(aimPart.Position)
+        if onScreen then
+            local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+            local distanceToMouse = (screenPos - mousePos).Magnitude
+            
+            if distanceToMouse < closestDistance then
+                closestDistance = distanceToMouse
+                bestTarget = {
+                    Player = targetData.Player,
+                    Character = character,
+                    Part = aimPart,
+                    Position = aimPart.Position,
+                    ScreenPosition = screenPos,
+                    Distance = distance,
+                    Velocity = character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart.Velocity or Vector3.zero
+                }
             end
         end
     end
     
-    -- Start scanning
-    for _, item in pairs(rs:GetChildren()) do
-        processItem(item, 0)
+    return bestTarget
+end
+
+-- Modified combat packet generator with team awareness
+function generateCombatPacket(target)
+    if not target then
+        -- Return a miss packet if no target
+        return {
+            {
+                0, 0, {}, -- Empty hits
+                workspace.CurrentCamera.CFrame.LookVector, -- Forward direction
+                getGunPosition(),
+                math.random(10000, 99999),
+                1
+            },
+            14
+        }
     end
     
-    -- Group by type for better organization
-    local remoteEvents = {}
-    local remoteFunctions = {}
-    local moduleScripts = {}
-    local folders = {}
-    local others = {}
+    -- Apply prediction
+    local predictedPosition = target.Position
+    if AIMBOT.Prediction > 0 and target.Velocity then
+        predictedPosition = target.Position + (target.Velocity * AIMBOT.Prediction)
+    end
     
-    for _, data in pairs(allItems) do
-        local item = data.item
-        
-        if item:IsA("RemoteEvent") then
-            table.insert(remoteEvents, data)
-        elseif item:IsA("RemoteFunction") then
-            table.insert(remoteFunctions, data)
-        elseif item:IsA("ModuleScript") then
-            table.insert(moduleScripts, data)
-        elseif item:IsA("Folder") then
-            table.insert(folders, data)
-        elseif data.type == "important" then
-            table.insert(others, data)
+    -- Direction from gun to target
+    local gunPosition = getGunPosition()
+    local direction = (predictedPosition - gunPosition).Unit
+    
+    -- Team-based damage multiplier (optional)
+    local damageMultiplier = 4 -- Default
+    if target.Player:FindFirstChild("IsVIP") then
+        damageMultiplier = 3 -- Less damage to VIPs
+    end
+    
+    return {
+        {
+            0, -- Action type
+            0, -- Weapon ID
+            { -- Hits
+                {
+                    0, -- Hit index
+                    {
+                        3, -- Damage type
+                        2, -- Body part (head)
+                        damageMultiplier,
+                        7,
+                        direction,
+                        nil, -- No object hit
+                        predictedPosition,
+                        -direction, -- Normal
+                        Vector3.new(21, 15, 7)
+                    },
+                    true, -- Critical
+                    0
+                }
+            },
+            direction, -- Shot direction
+            gunPosition, -- Origin
+            math.random(10000, 99999), -- Event ID
+            1 -- Your player ID
+        },
+        14 -- Shoot action
+    }
+end
+
+-- Hook the combat system
+local function hookCombat()
+    local originalCombatFunction
+    
+    -- Find the combat function
+    for _, obj in pairs(getgc()) do
+        if type(obj) == "function" then
+            local info = debug.getinfo(obj)
+            if info.name == "Replicate" and info.source:find("CombatClient") then
+                originalCombatFunction = obj
+                break
+            end
         end
     end
     
-    -- Format output by category
-    table.insert(output, "=== REMOTE EVENTS ===")
-    for _, data in pairs(remoteEvents) do
-        table.insert(output, formatItem(data.item, data.depth))
-    end
-    
-    table.insert(output, "")
-    table.insert(output, "=== REMOTE FUNCTIONS ===")
-    for _, data in pairs(remoteFunctions) do
-        table.insert(output, formatItem(data.item, data.depth))
-    end
-    
-    table.insert(output, "")
-    table.insert(output, "=== MODULE SCRIPTS ===")
-    for _, data in pairs(moduleScripts) do
-        table.insert(output, formatItem(data.item, data.depth))
-    end
-    
-    table.insert(output, "")
-    table.insert(output, "=== FOLDERS ===")
-    for _, data in pairs(folders) do
-        table.insert(output, formatItem(data.item, data.depth))
-    end
-    
-    table.insert(output, "")
-    table.insert(output, "=== OTHER IMPORTANT ITEMS ===")
-    for _, data in pairs(others) do
-        table.insert(output, formatItem(data.item, data.depth))
-    end
-    
-    -- Summary
-    table.insert(output, "")
-    table.insert(output, "=== SUMMARY ===")
-    table.insert(output, "Total items scanned: " .. itemCount)
-    table.insert(output, "RemoteEvents: " .. #remoteEvents)
-    table.insert(output, "RemoteFunctions: " .. #remoteFunctions)
-    table.insert(output, "ModuleScripts: " .. #moduleScripts)
-    table.insert(output, "Folders: " .. #folders)
-    
-    -- Convert to string
-    local outputText = table.concat(output, "\n")
-    
-    -- Copy to clipboard
-    local success = copyToClipboard(outputText)
-    
-    if success then
-        print("✓ ReplicatedStorage structure copied to clipboard!")
-        print("✓ " .. #remoteEvents .. " RemoteEvents")
-        print("✓ " .. #remoteFunctions .. " RemoteFunctions") 
-        print("✓ " .. #moduleScripts .. " ModuleScripts")
-        print("\nPaste it here when you're ready.")
+    if originalCombatFunction then
+        hookfunction(originalCombatFunction, function(actionData)
+            local target = getBestTarget()
+            
+            if target and actionData and actionData[2] == 14 then
+                local modifiedPacket = generateCombatPacket(target)
+                actionData = modifiedPacket[1]
+            end
+            
+            -- Call original
+            return CombatEvent:FireServer(actionData)
+        end)
+        
+        print("Combat system hooked successfully!")
     else
-        print("Please copy the printed text above.")
+        warn("Could not find combat function. Using direct packet sending.")
+        
+        -- Alternative: Hook MouseButton1Click on weapons
+        for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool:FindFirstChild("Shoot") then
+                tool.Activated:Connect(function()
+                    if AIMBOT.Enabled then
+                        local target = getBestTarget()
+                        if target then
+                            local packet = generateCombatPacket(target)
+                            CombatEvent:FireServer(unpack(packet))
+                            return -- Prevent normal firing
+                        end
+                    end
+                end)
+            end
+        end
     end
-    
-    return outputText
 end
 
--- Run the scanner
-scanReplicatedStorage()
+-- Get gun position with fallbacks
+function getGunPosition()
+    local character = LocalPlayer.Character
+    if character then
+        local tool = character:FindFirstChildOfClass("Tool")
+        if tool then
+            local handle = tool:FindFirstChild("Handle") or tool:FindFirstChild("Part")
+            if handle then
+                return handle.Position
+            end
+            return tool.Position
+        end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root then return root.Position end
+    end
+    return workspace.CurrentCamera.CFrame.Position
+end
+
+-- Status display
+local function createStatusUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Parent = game:GetService("CoreGui")
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0, 200, 0, 30)
+    textLabel.Position = UDim2.new(0, 10, 0, 40)
+    textLabel.BackgroundTransparency = 0.5
+    textLabel.TextColor3 = Color3.new(1, 1, 1)
+    textLabel.Text = "Silent Aim: OFF (Press E)"
+    textLabel.Font = Enum.Font.Code
+    textLabel.TextSize = 14
+    textLabel.Parent = screenGui
+    
+    RunService.RenderStepped:Connect(function()
+        textLabel.Text = string.format(
+            "Silent Aim: %s | Targets: %d (Press E)",
+            AIMBOT.Enabled and "ON" : "OFF",
+            #Players:GetPlayers() - 1
+        )
+        textLabel.TextColor3 = AIMBOT.Enabled and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+    end)
+    
+    return screenGui
+end
+
+-- Start everything
+initialize()
+hookCombat()
+createStatusUI()
+
+print("Auto-Updating Silent Aim loaded!")
+print("Toggle Key:", AIMBOT.ToggleKey)
+print("Team Check:", AIMBOT.TeamCheck)
+print("Aim Part:", AIMBOT.AimPart)
+print("FOV:", AIMBOT.FOV)
+
+-- Auto-rehook when player respawns
+LocalPlayer.CharacterAdded:Connect(function()
+    wait(1) -- Wait for tools to load
+    hookCombat()
+end)
