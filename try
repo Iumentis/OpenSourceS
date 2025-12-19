@@ -1,374 +1,504 @@
--- MURDER MYSTERY 2-STYLE GAME DECOMPILER HELPER
-local GameDecompiler = {}
-GameDecompiler.__index = GameDecompiler
+-- REAL BYTECODE ANALYZER - Extracts actual code patterns
+local BytecodeAnalyzer = {}
+BytecodeAnalyzer.__index = BytecodeAnalyzer
 
-function GameDecompiler.new()
-    local self = setmetatable({}, GameDecompiler)
+function BytecodeAnalyzer.new()
+    local self = setmetatable({}, BytecodeAnalyzer)
     
-    -- TARGET SPECIFIC PATHS BASED ON YOUR GAME STRUCTURE
-    self.targetPaths = {
-        -- Weapon systems (MOST IMPORTANT)
-        weapons = {
-            "ReplicatedStorage.Modules.WeaponSystem",
-            "ReplicatedStorage.WeaponEvents",
-            "Players.*.Backpack.*",  -- Player weapons
-            "Workspace.*.Knife",     -- Knife tools
-            "Workspace.*.Gun",       -- Gun tools
-        },
+    -- Game-specific keywords from your structure
+    self.gameKeywords = {
+        -- Weapons
+        "Gun", "Knife", "Shoot", "Fire", "Bullet", "Ammo", "Reload",
+        "Damage", "Hit", "Kill", "Murder", "Sheriff",
         
-        -- Trading system
-        trading = {
-            "ReplicatedStorage.Remotes",  -- All trade remotes
-            "ReplicatedStorage.Modules.Trading",
-        },
+        -- Trading
+        "Trade", "Offer", "Accept", "Decline", "Item", "Inventory",
         
-        -- Game logic
-        gameLogic = {
-            "ReplicatedStorage.Modules.GameMode",
-            "ReplicatedStorage.SharedServices",
-            "ReplicatedStorage.ClientServices",
-        },
+        -- Game systems
+        "Round", "Role", "Coin", "XP", "Level", "Prestige",
+        "Event", "Quest", "BattlePass",
         
-        -- Anti-cheat/security
-        security = {
-            "ReplicatedStorage.Modules.AntiCheat",
-            "ReplicatedStorage.ClientServices.WeaponService",
-        }
+        -- Network
+        "RemoteEvent", "RemoteFunction", "FireServer", "InvokeServer",
+        "OnClientEvent", "OnServerEvent",
+        
+        -- Services
+        "ReplicatedStorage", "Workspace", "Players", "UserInputService"
+    }
+    
+    -- Common Roblox patterns to look for
+    self.patterns = {
+        eventCall = {"FireServer", "InvokeServer", "Connect", "Wait"},
+        serviceGet = {"GetService", "WaitForChild", "FindFirstChild"},
+        mathOps = {"Vector3.new", "CFrame.new", "math.random", "tick"},
+        gameObjects = {"Instance.new", "Clone", "Destroy"}
     }
     
     return self
 end
 
--- Find all target scripts automatically
-function GameDecompiler:findTargetScripts()
-    local targets = {}
-    
-    print("🔍 Searching for game-specific scripts...")
-    
-    -- 1. WEAPON SYSTEMS (Priority #1)
-    local weaponModules = game:GetService("ReplicatedStorage"):FindFirstChild("Modules")
-    if weaponModules then
-        local weaponSystem = weaponModules:FindFirstChild("WeaponSystem")
-        if weaponSystem and weaponSystem:IsA("ModuleScript") then
-            table.insert(targets, {
-                name = "WeaponSystem",
-                script = weaponSystem,
-                priority = 10,
-                type = "weapon"
-            })
-        end
-        
-        -- Check for other weapon-related modules
-        for _, module in pairs(weaponModules:GetChildren()) do
-            if module:IsA("ModuleScript") and (
-                module.Name:find("Weapon") or 
-                module.Name:find("Gun") or
-                module.Name:find("Knife")
-            ) then
-                table.insert(targets, {
-                    name = module.Name,
-                    script = module,
-                    priority = 8,
-                    type = "weapon"
-                })
-            end
-        end
+-- Actually analyze bytecode hex string
+function BytecodeAnalyzer:analyzeBytecode(bytecode)
+    if not bytecode or #bytecode < 10 then
+        return {"-- No bytecode or too short"}
     end
     
-    -- 2. WEAPON EVENTS FOLDER
-    local weaponEvents = game:GetService("ReplicatedStorage"):FindFirstChild("WeaponEvents")
-    if weaponEvents then
-        for _, remote in pairs(weaponEvents:GetChildren()) do
-            if remote:IsA("RemoteEvent") and remote.Name:find("Gun") then
-                -- Look for associated scripts
-                local parent = remote.Parent
-                while parent and parent ~= game do
-                    local scripts = parent:GetChildren()
-                    for _, script in pairs(scripts) do
-                        if script:IsA("Script") or script:IsA("LocalScript") then
-                            if script.Name:find("Client") or script.Name:find("Server") then
-                                table.insert(targets, {
-                                    name = remote.Name .. "_" .. script.Name,
-                                    script = script,
-                                    priority = 9,
-                                    type = "weapon_remote"
-                                })
-                            end
-                        end
-                    end
-                    parent = parent.Parent
-                end
-            end
-        end
-    end
-    
-    -- 3. PLAYER WEAPON (Knife from your scan)
-    local localPlayer = game:GetService("Players").LocalPlayer
-    if localPlayer.Character then
-        for _, tool in pairs(localPlayer.Character:GetChildren()) do
-            if tool:IsA("Tool") and (tool.Name == "Knife" or tool.Name:find("Gun")) then
-                -- Look for client scripts in the tool
-                for _, script in pairs(tool:GetDescendants()) do
-                    if (script:IsA("Script") or script:IsA("LocalScript")) and 
-                       script.Name:find("Client") then
-                        table.insert(targets, {
-                            name = "Tool_" .. tool.Name .. "_" .. script.Name,
-                            script = script,
-                            priority = 10,  -- Highest priority
-                            type = "tool_client"
-                        })
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 4. GunFired RemoteEvent handling
-    local gunFired = game:GetService("ReplicatedStorage"):FindFirstChild("GunFired")
-    if gunFired and gunFired:IsA("RemoteEvent") then
-        -- Search for scripts that might handle GunFired
-        local clientServices = game:GetService("ReplicatedStorage"):FindFirstChild("ClientServices")
-        if clientServices then
-            local weaponService = clientServices:FindFirstChild("WeaponService")
-            if weaponService and weaponService:IsA("ModuleScript") then
-                table.insert(targets, {
-                    name = "WeaponService",
-                    script = weaponService,
-                    priority = 9,
-                    type = "weapon_service"
-                })
-            end
-        end
-    end
-    
-    -- Sort by priority (highest first)
-    table.sort(targets, function(a, b)
-        return a.priority > b.priority
-    end)
-    
-    return targets
-end
-
--- Game-specific decompilation with pattern recognition
-function GameDecompiler:smartDecompile(script)
-    local output = {"-- GAME-SPECIFIC DECOMPILATION ANALYSIS"}
-    table.insert(output, "Script: " .. script:GetFullName())
-    table.insert(output, "Type: " .. script.ClassName)
+    local output = {}
+    table.insert(output, "=== BYTECODE ANALYSIS ===")
+    table.insert(output, "Length: " .. #bytecode .. " bytes")
     table.insert(output, "")
     
-    -- Try standard decompile first
-    local decompileSuccess, decompiled = pcall(function()
-        return decompile(script)
-    end)
-    
-    if decompileSuccess and decompiled and #decompiled > 100 then
-        table.insert(output, "=== STANDARD DECOMPILE ===")
-        table.insert(output, decompiled)
-        return table.concat(output, "\n")
+    -- Convert hex to readable strings where possible
+    local function hexToString(hex)
+        local str = ""
+        for i = 1, #hex, 2 do
+            local byte = tonumber(hex:sub(i, i+1), 16)
+            if byte and byte >= 32 and byte <= 126 then
+                str = str .. string.char(byte)
+            else
+                str = str .. "."
+            end
+        end
+        return str
     end
     
-    -- If standard fails, use game-specific analysis
-    table.insert(output, "=== GAME-SPECIFIC ANALYSIS ===")
+    -- Look for embedded strings in bytecode
+    table.insert(output, "🔍 EMBEDDED STRINGS (ASCII):")
+    local foundStrings = {}
     
-    -- Get whatever info we can
-    local bytecodeSuccess, bytecode = pcall(getscriptbytecode, script)
-    if bytecodeSuccess and bytecode then
-        table.insert(output, "Bytecode size: " .. #bytecode .. " bytes")
+    -- Scan bytecode for ASCII sequences
+    for i = 1, #bytecode - 4, 2 do
+        local hexPair = bytecode:sub(i, i+1)
+        local dec = tonumber(hexPair, 16)
         
-        -- Look for game-specific patterns in bytecode
-        if script:IsA("ModuleScript") and script.Name:find("Weapon") then
-            table.insert(output, "")
-            table.insert(output, "🔫 WEAPON SYSTEM DETECTED")
-            table.insert(output, "Common weapon patterns to look for:")
-            table.insert(output, "1. FireServer('GunFired', ...)")
-            table.insert(output, "2. Raycasting for bullet trajectories")
-            table.insert(output, "3. Sound effect triggers")
-            table.insert(output, "4. Animation playing")
-            table.insert(output, "5. Ammo/reload logic")
-        end
-        
-        if script.Name:find("Client") then
-            table.insert(output, "")
-            table.insert(output, "💻 CLIENT-SIDE SCRIPT DETECTED")
-            table.insert(output, "May contain:")
-            table.insert(output, "1. User input handling (mouse/keyboard)")
-            table.insert(output, "2. Local visual effects")
-            table.insert(output, "3. UI updates")
-            table.insert(output, "4. Client-side validation")
-        end
-    end
-    
-    -- Try to get closure for deeper analysis
-    local closureSuccess, closure = pcall(getscriptclosure, script)
-    if closureSuccess and closure then
-        table.insert(output, "")
-        table.insert(output, "=== CLOSURE ANALYSIS ===")
-        
-        -- Extract constants
-        local constSuccess, constants = pcall(debug.getconstants, closure)
-        if constSuccess and constants then
-            table.insert(output, "Constants found: " .. #constants)
+        if dec and dec >= 65 and dec <= 90 then -- A-Z
+            -- Try to extract a string sequence
+            local potentialStr = ""
+            for j = i, math.min(#bytecode, i + 40), 2 do
+                local charHex = bytecode:sub(j, j+1)
+                local charDec = tonumber(charHex, 16)
+                if charDec and charDec >= 32 and charDec <= 126 then
+                    potentialStr = potentialStr .. string.char(charDec)
+                else
+                    break
+                end
+            end
             
-            -- Filter for game-relevant strings
-            local gameStrings = {}
-            for _, const in pairs(constants) do
-                if type(const) == "string" then
-                    -- Look for weapon/trading/game-specific terms
-                    if const:find("Gun") or const:find("Knife") or 
-                       const:find("Fire") or const:find("Shoot") or
-                       const:find("Trade") or const:find("Kill") or
-                       const:find("Murder") or const:find("Sheriff") then
-                        table.insert(gameStrings, const)
+            if #potentialStr >= 3 and #potentialStr <= 30 then
+                -- Check if it looks like a meaningful string
+                if potentialStr:match("^[%a%.%_]+$") and 
+                   not potentialStr:match("^%x+$") then -- Not just hex
+                    table.insert(foundStrings, potentialStr)
+                end
+            end
+        end
+    end
+    
+    -- Remove duplicates and sort
+    local uniqueStrings = {}
+    for _, str in ipairs(foundStrings) do
+        uniqueStrings[str] = true
+    end
+    
+    local sortedStrings = {}
+    for str in pairs(uniqueStrings) do
+        table.insert(sortedStrings, str)
+    end
+    table.sort(sortedStrings)
+    
+    for _, str in ipairs(sortedStrings) do
+        -- Highlight game-related strings
+        local prefix = "  "
+        for _, keyword in ipairs(self.gameKeywords) do
+            if str:find(keyword) then
+                prefix = "  🎯 "
+                break
+            end
+        end
+        table.insert(output, prefix .. str)
+    end
+    
+    if #sortedStrings == 0 then
+        table.insert(output, "  No readable strings found")
+    end
+    
+    return output
+end
+
+-- Extract constants from closure
+function BytecodeAnalyzer:extractConstants(closure)
+    local output = {}
+    
+    local success, constants = pcall(debug.getconstants, closure)
+    if not success or not constants then
+        table.insert(output, "-- Failed to get constants")
+        return output
+    end
+    
+    table.insert(output, "📦 EXTRACTED CONSTANTS: " .. #constants)
+    table.insert(output, "")
+    
+    -- Categorize constants
+    local strings = {}
+    local numbers = {}
+    local booleans = {}
+    local nils = 0
+    
+    for i, const in ipairs(constants) do
+        local constType = type(const)
+        
+        if constType == "string" then
+            -- Filter out garbage strings
+            if #const > 0 and #const < 100 then
+                -- Check for game relevance
+                local isGameRelated = false
+                for _, keyword in ipairs(self.gameKeywords) do
+                    if const:find(keyword) then
+                        isGameRelated = true
+                        break
                     end
                 end
+                
+                if isGameRelated then
+                    table.insert(strings, "🎯 [" .. i .. "] \"" .. const .. "\"")
+                elseif const:match("^[%a%_][%w%_]*$") then -- Looks like identifier
+                    table.insert(strings, "  [" .. i .. "] \"" .. const .. "\"")
+                end
             end
             
-            if #gameStrings > 0 then
-                table.insert(output, "Game-relevant strings:")
-                for _, str in pairs(gameStrings) do
-                    table.insert(output, "  • \"" .. str .. "\"")
-                end
+        elseif constType == "number" then
+            -- Only show interesting numbers
+            if const == 0 or const == 1 or const == 100 or const == 1000 or 
+               const == -1 or const == 0.5 or const == 0.25 then
+                table.insert(numbers, "  [" .. i .. "] " .. const)
+            end
+            
+        elseif constType == "boolean" then
+            table.insert(booleans, "  [" .. i .. "] " .. tostring(const))
+            
+        elseif const == nil then
+            nils = nils + 1
+        end
+    end
+    
+    -- Add categorized output
+    if #strings > 0 then
+        table.insert(output, "🔤 STRINGS (" .. #strings .. "):")
+        for _, str in ipairs(strings) do
+            table.insert(output, str)
+        end
+        table.insert(output, "")
+    end
+    
+    if #numbers > 0 then
+        table.insert(output, "🔢 NUMBERS (" .. #numbers .. "):")
+        for _, num in ipairs(numbers) do
+            table.insert(output, num)
+        end
+        table.insert(output, "")
+    end
+    
+    if #booleans > 0 then
+        table.insert(output, "🔘 BOOLEANS (" .. #booleans .. "):")
+        for _, bool in ipairs(booleans) do
+            table.insert(output, bool)
+        end
+        table.insert(output, "")
+    end
+    
+    if nils > 0 then
+        table.insert(output, "◻️  NILS: " .. nils)
+        table.insert(output, "")
+    end
+    
+    return output
+end
+
+-- Analyze function structure
+function BytecodeAnalyzer:analyzeFunction(closure)
+    local output = {}
+    
+    table.insert(output, "🔧 FUNCTION STRUCTURE:")
+    
+    -- Get debug info
+    local infoSuccess, info = pcall(debug.getinfo, closure)
+    if infoSuccess and info then
+        table.insert(output, "  Source: " .. (info.source or "?"))
+        table.insert(output, "  What: " .. (info.what or "?"))
+        table.insert(output, "  Line: " .. (info.currentline or "?"))
+        table.insert(output, "  Params: " .. (info.numparams or "?"))
+        table.insert(output, "")
+    end
+    
+    -- Check closure type
+    if iscclosure then
+        table.insert(output, "  Type: " .. (iscclosure(closure) and "C Closure" or "Lua Closure"))
+    end
+    if islclosure then
+        table.insert(output, "  Type: " .. (islclosure(closure) and "Lua Closure" or "C Closure"))
+    end
+    
+    -- Get upvalues
+    local upvalueSuccess, upvalues = pcall(function()
+        local ups = {}
+        for i = 1, math.huge do
+            local success, name, value = pcall(debug.getupvalue, closure, i)
+            if not success then break end
+            if not name then break end
+            table.insert(ups, {name = name, value = type(value)})
+        end
+        return ups
+    end)
+    
+    if upvalueSuccess and #upvalues > 0 then
+        table.insert(output, "")
+        table.insert(output, "  📥 UPVALUES (" .. #upvalues .. "):")
+        for i, upv in ipairs(upvalues) do
+            table.insert(output, "    [" .. i .. "] " .. upv.name .. " (" .. upv.value .. ")")
+        end
+    end
+    
+    -- Get nested functions (protos)
+    local protoSuccess, protos = pcall(debug.getprotos, closure)
+    if protoSuccess and #protos > 0 then
+        table.insert(output, "")
+        table.insert(output, "  🔄 NESTED FUNCTIONS (" .. #protos .. "):")
+        for i, proto in ipairs(protos) do
+            local protoInfo = debug.getinfo(proto)
+            if protoInfo and protoInfo.source then
+                local src = protoInfo.source:match("[^\\/]+$") or protoInfo.source
+                table.insert(output, "    [" .. i .. "] " .. src)
             end
         end
     end
     
-    -- Check for source in ModuleScripts
-    if script:IsA("ModuleScript") and script.Source and #script.Source > 0 then
-        table.insert(output, "")
-        table.insert(output, "=== MODULE SOURCE ===")
-        
-        -- Extract first 20 lines
-        local lines = {}
-        for line in script.Source:gmatch("[^\r\n]+") do
-            table.insert(lines, line)
-            if #lines >= 20 then break end
+    return output
+end
+
+-- Main analysis function for a script
+function BytecodeAnalyzer:analyzeScript(script)
+    local output = {}
+    
+    table.insert(output, "=" .. string.rep("=", 50))
+    table.insert(output, "SCRIPT ANALYSIS: " .. script:GetFullName())
+    table.insert(output, "Type: " .. script.ClassName)
+    table.insert(output, "=" .. string.rep("=", 50))
+    table.insert(output, "")
+    
+    -- Try to get bytecode FIRST
+    local bytecodeSuccess, bytecode = pcall(getscriptbytecode, script)
+    if bytecodeSuccess and bytecode then
+        local bytecodeAnalysis = self:analyzeBytecode(bytecode)
+        for _, line in ipairs(bytecodeAnalysis) do
+            table.insert(output, line)
         end
-        
-        for _, line in pairs(lines) do
+    else
+        table.insert(output, "-- Could not get bytecode")
+    end
+    
+    table.insert(output, "")
+    
+    -- Try to get closure
+    local closureSuccess, closure = pcall(getscriptclosure, script)
+    if closureSuccess and closure then
+        -- Extract constants
+        local constantsOutput = self:extractConstants(closure)
+        for _, line in ipairs(constantsOutput) do
             table.insert(output, line)
         end
         
-        if #script.Source > 20 * 80 then  -- Rough estimate
-            table.insert(output, "... (source truncated)")
+        table.insert(output, "")
+        
+        -- Analyze function structure
+        local functionOutput = self:analyzeFunction(closure)
+        for _, line in ipairs(functionOutput) do
+            table.insert(output, line)
+        end
+    else
+        table.insert(output, "-- Could not get closure")
+    end
+    
+    -- For ModuleScripts, show source if available
+    if script:IsA("ModuleScript") and script.Source and #script.Source > 0 then
+        table.insert(output, "")
+        table.insert(output, "📄 MODULE SOURCE PREVIEW:")
+        table.insert(output, string.rep("-", 40))
+        
+        local lines = {}
+        for line in script.Source:gmatch("[^\r\n]+") do
+            table.insert(lines, line)
+            if #lines >= 15 then break end
+        end
+        
+        for i, line in ipairs(lines) do
+            table.insert(output, string.format("%3d: %s", i, line))
+        end
+        
+        if #script.Source > 15 * 80 then
+            table.insert(output, "... (truncated)")
         end
     end
     
-    -- Add exploitation hints based on script type
     table.insert(output, "")
-    table.insert(output, "=== EXPLOITATION HINTS ===")
-    
-    if script.Name:find("Weapon") or script.Name:find("Gun") then
-        table.insert(output, "🎯 WEAPON SYSTEM - POTENTIAL VULNERABILITIES:")
-        table.insert(output, "1. Client-side rate limiting (spam shots)")
-        table.insert(output, "2. No server-side trajectory validation")
-        table.insert(output, "3. Predictable damage calculation")
-        table.insert(output, "4. Local anti-cheat that can be bypassed")
-        
-    elseif script.Name:find("Client") then
-        table.insert(output, "🎯 CLIENT SCRIPT - POTENTIAL VULNERABILITIES:")
-        table.insert(output, "1. Local validation that can be bypassed")
-        table.insert(output, "2. Event handlers that can be hooked")
-        table.insert(output, "3. UI elements that can be manipulated")
-        table.insert(output, "4. Animation/sound triggers")
-        
-    elseif script:IsA("ModuleScript") then
-        table.insert(output, "🎯 MODULE SCRIPT - POTENTIAL VULNERABILITIES:")
-        table.insert(output, "1. Global state that can be corrupted")
-        table.insert(output, "2. Function tables that can be hooked")
-        table.insert(output, "3. Configuration values that can be changed")
-    end
+    table.insert(output, "=" .. string.rep("=", 50))
     
     return table.concat(output, "\n")
 end
 
--- Batch decompile all important scripts
-function GameDecompiler:batchDecompile()
-    local allOutput = {}
-    local targets = self:findTargetScripts()
+-- Analyze specific game scripts from your structure
+function BytecodeAnalyzer:analyzeGameScripts()
+    local output = {}
+    local analyzed = 0
     
-    table.insert(allOutput, "=== MURDER MYSTERY 2-STYLE GAME DECOMPILATION ===")
-    table.insert(allOutput, "Found " .. #targets .. " target scripts")
-    table.insert(allOutput, "Time: " .. os.date("%H:%M:%S"))
-    table.insert(allOutput, "")
+    table.insert(output, "🎮 MURDER MYSTERY 2 GAME ANALYSIS")
+    table.insert(output, "Targeting key scripts from your game structure")
+    table.insert(output, "Time: " .. os.date("%H:%M:%S"))
+    table.insert(output, "")
     
-    for i, target in pairs(targets) do
-        table.insert(allOutput, string.rep("=", 60))
-        table.insert(allOutput, "[" .. i .. "] " .. target.name)
-        table.insert(allOutput, "Path: " .. target.script:GetFullName())
-        table.insert(allOutput, "Type: " .. target.type .. " | Priority: " .. target.priority)
-        table.insert(allOutput, string.rep("-", 60))
+    -- TARGET LIST from your game structure
+    local targets = {
+        -- HIGH PRIORITY: Weapon systems
+        {name = "WeaponSystem", path = "ReplicatedStorage.Modules.WeaponSystem"},
+        {name = "GunFired Handler", path = "ReplicatedStorage.ClientServices.WeaponService"},
+        {name = "GunBeam Remote", path = "ReplicatedStorage.WeaponEvents.GunBeam"},
         
-        local decompiled = self:smartDecompile(target.script)
-        table.insert(allOutput, decompiled)
+        -- MEDIUM PRIORITY: Game logic
+        {name = "GameMode", path = "ReplicatedStorage.Modules.GameMode"},
+        {name = "Trading", path = "ReplicatedStorage.Remotes"},
         
-        -- Limit to top 5 scripts to avoid huge output
-        if i >= 5 then
-            table.insert(allOutput, "")
-            table.insert(allOutput, "⚠️  Limited to first 5 scripts (most important)")
-            break
+        -- TOOLS: Player weapons
+        {name = "Knife Tool", search = function()
+            local player = game.Players.LocalPlayer
+            if player and player.Character then
+                for _, child in pairs(player.Character:GetChildren()) do
+                    if child:IsA("Tool") and child.Name == "Knife" then
+                        return child
+                    end
+                end
+            end
+            return nil
+        end}
+    }
+    
+    -- Analyze each target
+    for _, target in ipairs(targets) do
+        local script = nil
+        
+        if target.path then
+            -- Resolve path
+            local parts = {}
+            for part in target.path:gmatch("[^%.]+") do
+                table.insert(parts, part)
+            end
+            
+            local current = game
+            for i, part in ipairs(parts) do
+                if current:IsA("DataModel") then
+                    current = current:GetService(part)
+                else
+                    current = current:WaitForChild(part, 1)
+                end
+                if not current then break end
+            end
+            
+            if current and (current:IsA("Script") or current:IsA("LocalScript") or current:IsA("ModuleScript")) then
+                script = current
+            end
+            
+        elseif target.search then
+            script = target.search()
         end
-    end
-    
-    table.insert(allOutput, string.rep("=", 60))
-    table.insert(allOutput, "DECOMPILATION COMPLETE")
-    
-    return table.concat(allOutput, "\n")
-end
-
--- Save to file with automatic naming
-function GameDecompiler:saveToFile(content)
-    local fileName = "game_decompile_" .. os.time() .. ".txt"
-    
-    if type(writefile) == "function" then
-        local success, err = pcall(writefile, fileName, content)
-        if success then
-            return fileName, true
+        
+        if script then
+            table.insert(output, "\n" .. string.rep("=", 60))
+            table.insert(output, "ANALYZING: " .. target.name)
+            table.insert(output, "Path: " .. script:GetFullName())
+            table.insert(output, string.rep("-", 60))
+            
+            local analysis = self:analyzeScript(script)
+            table.insert(output, analysis)
+            
+            analyzed = analyzed + 1
+            
+            -- Limit to avoid huge output
+            if analyzed >= 3 then
+                table.insert(output, "\n⚠️  Limited to first 3 scripts")
+                break
+            end
         else
-            return "Error: " .. tostring(err), false
+            table.insert(output, "\n❌ MISSING: " .. target.name .. " (" .. (target.path or "search") .. ")")
         end
     end
     
-    return "writefile not available", false
+    if analyzed == 0 then
+        table.insert(output, "\n⚠️  No target scripts found!")
+        table.insert(output, "Trying fallback analysis...")
+        
+        -- Fallback: Analyze ANY ModuleScript in ReplicatedStorage
+        local rs = game:GetService("ReplicatedStorage")
+        for _, item in pairs(rs:GetChildren()) do
+            if item:IsA("ModuleScript") and analyzed < 2 then
+                table.insert(output, "\n" .. string.rep("=", 60))
+                table.insert(output, "FALLBACK: " .. item.Name)
+                table.insert(output, string.rep("-", 60))
+                
+                local analysis = self:analyzeScript(item)
+                table.insert(output, analysis)
+                
+                analyzed = analyzed + 1
+            end
+        end
+    end
+    
+    table.insert(output, "\n" .. string.rep("=", 60))
+    table.insert(output, "ANALYSIS COMPLETE")
+    table.insert(output, "Scripts analyzed: " .. analyzed)
+    
+    return table.concat(output, "\n")
 end
 
 -- ========== MAIN EXECUTION ==========
-print("🎮 MURDER MYSTERY 2 GAME DECOMPILER")
-print("Targeting weapon systems, trading, and game logic...")
+print("🔍 BYTECODE ANALYZER - EXTRACTING REAL DATA")
+print("This will actually decode bytecode and extract constants")
 print("")
 
-local decompiler = GameDecompiler.new()
-
--- Run batch decompilation
-print("🚀 Starting batch decompilation...")
-local result = decompiler:batchDecompile()
+local analyzer = BytecodeAnalyzer.new()
+local result = analyzer:analyzeGameScripts()
 
 -- Save to file
-print("💾 Saving to file...")
-local fileName, success = decompiler:saveToFile(result)
+local fileName = "bytecode_analysis_" .. os.time() .. ".txt"
 
-if success then
-    print("✅ Saved to: " .. fileName)
-    
-    -- Show preview
-    print("\n📄 PREVIEW (first 30 lines):")
-    print(string.rep("-", 50))
-    
-    local lines = {}
-    for line in result:gmatch("[^\r\n]+") do
-        table.insert(lines, line)
-        if #lines >= 30 then break end
+if type(writefile) == "function" then
+    local success, err = pcall(writefile, fileName, result)
+    if success then
+        print("✅ Saved analysis to: " .. fileName)
+        
+        -- Show preview
+        print("\n📄 PREVIEW:")
+        print(string.rep("-", 50))
+        
+        local lines = {}
+        for line in result:gmatch("[^\r\n]+") do
+            table.insert(lines, line)
+            if #lines >= 20 then break end
+        end
+        
+        print(table.concat(lines, "\n"))
+        print("... (full analysis in file)")
+        
+    else
+        print("❌ Failed to save: " .. tostring(err))
+        print("\n📋 OUTPUT (first 500 chars):")
+        print(string.rep("-", 50))
+        print(result:sub(1, 500))
+        print("...")
     end
-    
-    print(table.concat(lines, "\n"))
-    print("... (full output in file)")
-    
 else
-    print("❌ Failed to save: " .. fileName)
-    print("\n📋 OUTPUT (first 500 chars):")
+    print("⚠️  writefile not available")
+    print("\n📋 OUTPUT:")
     print(string.rep("-", 50))
-    print(result:sub(1, 500))
-    print("...")
+    print(result)
 end
 
 print("\n" .. string.rep("=", 50))
-print("COMPLETE! Check the saved file for detailed analysis.")
+print("Check the file for ACTUAL bytecode/constant extraction!")
