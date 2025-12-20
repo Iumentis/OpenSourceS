@@ -1,494 +1,348 @@
-warn("v2 - Targeting CoinVisual instead of Coin_Server")
+warn("v1")
 
 -- ============================================
--- COIN AUTOFARM SYSTEM v2
--- Version: Targets CoinVisual for precise movement
+-- Eclipse Hub Dynamic Analysis Tool
+-- Run this BEFORE executing Eclipse Hub
 -- ============================================
 
--- ========== CONFIGURATION ==========
-local config = {
-    -- Movement settings
-    WalkSpeed = 22, -- Normal human walking speed
-    JumpPower = 50,
-    SmoothTurn = true,
-    TurnSmoothness = 0.6,
-    
-    -- Collection settings
-    CoinRadius = 50, -- How close to get to CoinVisual (smaller radius)
-    WaitAfterCollect = 0.01,
-    MaxSearchDistance = 500,
-    
-    -- Optimization settings
-    CacheCoins = true,
-    CacheTime = 1,
-    PathRefreshRate = 0.2,
-    
-    -- Safety settings
-    MaxAttemptsPerCoin = 3,
-    StuckDetection = true,
-    StuckTimeout = 5,
-    
-    -- New: CoinVisual targeting
-    TargetCoinVisual = true, -- Set to false to target Coin_Server instead
-    VisualPartName = "CoinVisual"
+-- Configuration
+local ANALYSIS_CONFIG = {
+    LOG_DETAILS = true,            -- Log function arguments and returns
+    LOG_ENV_CHANGES = true,        -- Log changes to global environment
+    LOG_NETWORK_REQUESTS = true,   -- Log HTTP requests
+    LOG_HOOKS = true,              -- Log function/metatable hooks
+    LOG_DEBUG_OPS = true,          -- Log debug operations
+    OUTPUT_FILE = "eclipse_analysis.log", -- Optional file output
 }
 
--- ========== INITIALIZATION ==========
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local PathfindingService = game:GetService("PathfindingService")
-local RunService = game:GetService("RunService")
+-- Tracking tables
+local trackedCalls = {}
+local originalFunctions = {}
+local environmentSnapshot = {}
+local hookRegistry = {}
+local analysisStartTime = os.clock()
 
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+-- ============================================
+-- Core Monitoring Functions
+-- ============================================
 
-Humanoid.AutoRotate = true
-
--- ========== CORE FUNCTIONS ==========
-
--- Cache system for performance
-local coinCache = {
-    activeCoins = {},
-    lastUpdate = 0,
-    container = nil
-}
-
-local function findCoinContainer()
-    if coinCache.container and coinCache.container.Parent then
-        return coinCache.container
-    end
+local function logEvent(eventType, details)
+    local timestamp = string.format("[%.3f]", os.clock() - analysisStartTime)
+    local message = string.format("%s %s: %s", timestamp, eventType, details)
     
-    -- Search in Workspace.IceCastle
-    local iceCastle = Workspace:FindFirstChild("IceCastle")
-    if iceCastle and iceCastle:FindFirstChild("CoinContainer") then
-        coinCache.container = iceCastle.CoinContainer
-        return coinCache.container
-    end
+    print(message)
     
-    -- Fallback: search all models
-    for _, obj in pairs(Workspace:GetChildren()) do
-        if obj:IsA("Model") and obj:FindFirstChild("CoinContainer") then
-            coinCache.container = obj.CoinContainer
-            return coinCache.container
-        end
+    if ANALYSIS_CONFIG.OUTPUT_FILE then
+        writefile(ANALYSIS_CONFIG.OUTPUT_FILE, message .. "\n", true)
     end
-    return nil
 end
 
-local function getCoinVisualPosition(coinServer)
-    -- Get the actual CoinVisual part for precise targeting
-    if not coinServer or not coinServer.Parent then return nil end
+local function createHookWrapper(funcName, originalFunc, context)
+    return function(...)
+        local args = {...}
+        local success, result
+        
+        -- Log the call
+        if ANALYSIS_CONFIG.LOG_DETAILS then
+            local argStr = ""
+            for i, v in ipairs(args) do
+                argStr = argStr .. string.format("arg%d=%s ", i, type(v))
+                if type(v) == "string" and #v < 50 then
+                    argStr = argStr .. string.format("(%s) ", v)
+                end
+            end
+            logEvent("CALL", string.format("%s.%s(%s)", context, funcName, argStr))
+        else
+            logEvent("CALL", string.format("%s.%s", context, funcName))
+        end
+        
+        -- Track the call
+        trackedCalls[funcName] = (trackedCalls[funcName] or 0) + 1
+        
+        -- Execute original function
+        success, result = pcall(originalFunc, ...)
+        
+        -- Log return
+        if success and ANALYSIS_CONFIG.LOG_DETAILS then
+            logEvent("RETURN", string.format("%s.%s -> %s", context, funcName, type(result)))
+        elseif not success then
+            logEvent("ERROR", string.format("%s.%s: %s", context, funcName, result))
+        end
+        
+        return result
+    end
+end
+
+-- ============================================
+-- Environment Monitoring
+-- ============================================
+
+local function monitorGlobalEnvironment()
+    if not ANALYSIS_CONFIG.LOG_ENV_CHANGES then return end
     
-    if config.TargetCoinVisual then
-        local coinVisual = coinServer:FindFirstChild(config.VisualPartName)
-        if coinVisual and coinVisual:IsA("BasePart") then
-            return coinVisual.Position
+    -- Take initial snapshot of _G and shared
+    environmentSnapshot._G = {}
+    environmentSnapshot.shared = {}
+    
+    for k, v in pairs(_G) do
+        environmentSnapshot._G[k] = true
+    end
+    
+    if shared then
+        for k, v in pairs(shared) do
+            environmentSnapshot.shared[k] = true
         end
     end
     
-    -- Fallback to Coin_Server position
-    return coinServer.Position
+    -- Monitor _G for new entries
+    local _G_metatable = getrawmetatable and getrawmetatable(_G)
+    if _G_metatable then
+        local original__newindex = _G_metatable.__newindex
+        _G_metatable.__newindex = function(t, k, v)
+            if not environmentSnapshot._G[k] then
+                logEvent("ENV_SET", string.format("_G.%s = %s (new)", k, type(v)))
+                environmentSnapshot._G[k] = true
+            end
+            return original__newindex(t, k, v)
+        end
+        hookRegistry["_G_metatable"] = _G_metatable
+    end
 end
 
-local function updateCoinCache()
-    local currentTime = tick()
+-- ============================================
+-- Function Hooking System
+-- ============================================
+
+local function hookSUSPICIOUSFunctions()
+    -- List of functions to monitor (from sUNC)
+    local functionsToHook = {
+        -- Environment functions
+        "getgenv", "getrenv", "getgc", "getrawmetatable",
+        "setrawmetatable", "setreadonly", "isreadonly",
+        
+        -- Debug functions
+        "debug.getconstants", "debug.getconstant", "debug.setconstant",
+        "debug.getupvalues", "debug.getupvalue", "debug.setupvalue",
+        "debug.getstack", "debug.setstack", "debug.getprotos",
+        "debug.getproto",
+        
+        -- Hooking functions
+        "hookfunction", "hookmetamethod", "newcclosure",
+        
+        -- Script functions
+        "getscriptbytecode", "getscripthash", "getscriptclosure",
+        "getsenv", "getscripts", "getrunningscripts",
+        "getloadedmodules", "getcallingscript",
+        
+        -- Instance functions
+        "getinstances", "getnilinstances", "cloneref", "gethui",
+        "getcallbackvalue", "compareinstances",
+        
+        -- Other suspicious functions
+        "identifyexecutor", "loadstring",
+        "crypt.base64encode", "crypt.base64decode",
+    }
     
-    -- Only update cache periodically
-    if currentTime - coinCache.lastUpdate < config.CacheTime then
-        return coinCache.activeCoins
-    end
+    -- Hook functions in different contexts
+    local contexts = {_G, getgenv and getgenv() or {}, debug}
     
-    local container = findCoinContainer()
-    if not container then
-        coinCache.activeCoins = {}
-        return coinCache.activeCoins
-    end
-    
-    local newActiveCoins = {}
-    
-    for _, coinServer in pairs(container:GetChildren()) do
-        if coinServer.Name == "Coin_Server" and coinServer:IsA("BasePart") then
-            -- Check if coin is collectible (Transparency = 1)
-            if coinServer.Transparency == 1 and coinServer.Parent then
-                -- Get the actual target position (CoinVisual if exists)
-                local targetPosition = getCoinVisualPosition(coinServer)
-                if not targetPosition then continue end
-                
-                -- Store both parts for reference
-                table.insert(newActiveCoins, {
-                    ServerPart = coinServer,
-                    VisualPart = coinServer:FindFirstChild(config.VisualPartName),
-                    Position = targetPosition, -- This is CoinVisual position!
-                    LastSeen = currentTime,
-                    Attempts = 0,
-                    IsCollecting = false,
-                    Collectible = true
-                })
+    for _, context in ipairs(contexts) do
+        if type(context) == "table" then
+            for _, funcName in ipairs(functionsToHook) do
+                local original = context[funcName]
+                if type(original) == "function" then
+                    -- Save original
+                    originalFunctions[funcName] = original
+                    
+                    -- Create and set hook
+                    context[funcName] = createHookWrapper(funcName, original, "global")
+                    hookRegistry[funcName] = context[funcName]
+                    
+                    logEvent("HOOK_SET", string.format("Hooked: %s", funcName))
+                end
             end
         end
     end
-    
-    coinCache.activeCoins = newActiveCoins
-    coinCache.lastUpdate = currentTime
-    
-    -- Debug output
-    if #newActiveCoins > 0 then
-        print(string.format("[Cache] Found %d active coins", #newActiveCoins))
-    end
-    
-    return newActiveCoins
 end
 
-local function isBagFull()
-    local success, result = pcall(function()
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("MainGUI")
-        if not gui then return false end
-        
-        local gameGui = gui:FindFirstChild("Game")
-        if not gameGui then return false end
-        
-        local coinBags = gameGui:FindFirstChild("CoinBags")
-        if not coinBags then return false end
-        
-        local container = coinBags:FindFirstChild("Container")
-        if not container then return false end
-        
-        local snowToken = container:FindFirstChild("SnowToken")
-        if not snowToken then return false end
-        
-        -- Check coin count
-        local currencyFrame = snowToken:FindFirstChild("CurrencyFrame")
-        if currencyFrame then
-            local icon = currencyFrame:FindFirstChild("Icon")
-            if icon then
-                local coinsText = icon:FindFirstChild("Coins")
-                if coinsText and coinsText:IsA("TextLabel") then
-                    local coins = tonumber(coinsText.Text)
-                    if coins and coins >= 50 then
-                        return true
+-- ============================================
+-- HTTP Request Monitoring
+-- ============================================
+
+local function monitorHTTPRequests()
+    if not ANALYSIS_CONFIG.LOG_NETWORK_REQUESTS then return end
+    
+    -- Monitor all HTTP request variants
+    local httpVariants = {"request", "http_request", "syn.request"}
+    
+    for _, variant in ipairs(httpVariants) do
+        local original = _G[variant] or (syn and syn[variant])
+        if type(original) == "function" then
+            originalFunctions[variant] = original
+            
+            local hooked = function(options)
+                if options and options.Url then
+                    logEvent("HTTP_REQUEST", string.format("URL: %s", options.Url))
+                    if options.Headers then
+                        logEvent("HTTP_HEADERS", string.format("Headers: %s", tostring(options.Headers)))
+                    end
+                end
+                return original(options)
+            end
+            
+            if _G[variant] then
+                _G[variant] = hooked
+            elseif syn then
+                syn[variant] = hooked
+            end
+            hookRegistry[variant] = hooked
+        end
+    end
+end
+
+-- ============================================
+-- Metatable & Hook Detection
+-- ============================================
+
+local function monitorMetatableHooks()
+    if not ANALYSIS_CONFIG.LOG_HOOKS then return end
+    
+    -- Track metatable changes on key objects
+    local importantObjects = {
+        game, workspace, game.Players, game.Players.LocalPlayer
+    }
+    
+    for _, obj in ipairs(importantObjects) do
+        if obj and getrawmetatable then
+            local mt = getrawmetatable(obj)
+            if mt then
+                local originalIndex = mt.__index
+                local originalNamecall = mt.__namecall
+                
+                if originalIndex then
+                    mt.__index = function(self, key)
+                        logEvent("META_INDEX", string.format("%s.%s accessed via metatable", tostring(self), key))
+                        return originalIndex(self, key)
+                    end
+                end
+                
+                if originalNamecall then
+                    mt.__namecall = function(self, ...)
+                        local method = getnamecallmethod()
+                        logEvent("META_NAMECALL", string.format("%s:%s() called via metatable", tostring(self), method))
+                        return originalNamecall(self, ...)
                     end
                 end
             end
         end
-        
-        -- Check full indicator
-        local fullIndicator = snowToken:FindFirstChild("Full")
-        if fullIndicator and fullIndicator.Visible then
-            return true
-        end
-        
-        return false
-    end)
-    
-    return success and result or false
-end
-
-local function getClosestCoin()
-    local activeCoins = updateCoinCache()
-    if #activeCoins == 0 then return nil end
-    
-    local closestCoin = nil
-    local closestDistance = math.huge
-    local playerPos = HumanoidRootPart.Position
-    
-    for _, coinData in pairs(activeCoins) do
-        if coinData.ServerPart and coinData.ServerPart.Parent and coinData.Collectible then
-            local distance = (coinData.Position - playerPos).Magnitude
-            
-            -- Skip if too far or already being collected
-            if distance < closestDistance and distance < config.MaxSearchDistance 
-               and not coinData.IsCollecting then
-                closestDistance = distance
-                closestCoin = coinData
-            end
-        end
-    end
-    
-    return closestCoin, closestDistance
-end
-
--- ========== PATHFINDING SYSTEM ==========
-local currentPath = nil
-local pathGoal = nil
-local lastPathUpdate = 0
-local stuckCheck = {
-    lastPosition = Vector3.new(),
-    stuckTime = 0
-}
-
-local function createSmoothPath(destination)
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-        WaypointSpacing = 3, -- Reduced for more precision
-        Costs = {
-            Water = 20,
-            Lava = math.huge
-        }
-    })
-    
-    local startPos = HumanoidRootPart.Position
-    path:ComputeAsync(startPos, destination)
-    
-    if path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        
-        -- Filter waypoints but keep more for CoinVisual precision
-        local filteredWaypoints = {}
-        for i, waypoint in ipairs(waypoints) do
-            -- Keep more waypoints near the end for precision
-            local isNearEnd = i > #waypoints - 3
-            if i == 1 or i == #waypoints or isNearEnd or i % 2 == 0 then
-                table.insert(filteredWaypoints, waypoint)
-            end
-        end
-        
-        return filteredWaypoints
-    else
-        print("[Pathfinding] Failed to compute path:", path.Status)
-        return nil
     end
 end
 
-local function moveToWaypoint(waypoint)
-    Humanoid:MoveTo(waypoint.Position)
-    
-    -- Add human-like delay
-    if waypoint.Action == Enum.PathWaypointAction.Jump then
-        Humanoid.Jump = true
-        task.wait(0.2)
-    end
-    
-    -- Wait until reached or timeout
-    local startTime = tick()
-    local waypointTimeout = 3
-    
-    while (HumanoidRootPart.Position - waypoint.Position).Magnitude > 4 do
-        local elapsed = tick() - startTime
-        
-        -- Timeout check
-        if elapsed > waypointTimeout then
-            print("[Movement] Waypoint timeout")
-            return false
-        end
-        
-        -- Stuck detection
-        if config.StuckDetection then
-            local movedDistance = (HumanoidRootPart.Position - stuckCheck.lastPosition).Magnitude
-            if movedDistance < 0.5 then
-                stuckCheck.stuckTime = stuckCheck.stuckTime + RunService.Heartbeat:Wait()
-                if stuckCheck.stuckTime > 1 then
-                    -- Jump to get unstuck
-                    Humanoid.Jump = true
-                    stuckCheck.stuckTime = 0
-                    print("[Movement] Jumping to unstuck")
-                end
-            else
-                stuckCheck.lastPosition = HumanoidRootPart.Position
-                stuckCheck.stuckTime = 0
-            end
-        end
-        
-        RunService.Heartbeat:Wait()
-    end
-    
-    return true
-end
+-- ============================================
+-- Drawing & UI Monitoring
+-- ============================================
 
-local function moveToCoinSmooth(coinPosition, coinData)
-    local waypoints = createSmoothPath(coinPosition)
-    if not waypoints then return false end
-    
-    -- Reset stuck detection
-    stuckCheck.lastPosition = HumanoidRootPart.Position
-    stuckCheck.stuckTime = 0
-    
-    -- Follow waypoints
-    for i, waypoint in ipairs(waypoints) do
-        -- Check if coin is still valid
-        if not coinData.ServerPart or not coinData.ServerPart.Parent then
-            print("[Movement] Coin disappeared during movement")
-            return false
+local function monitorDrawing()
+    if Drawing then
+        local originalNew = Drawing.new
+        Drawing.new = function(type)
+            logEvent("DRAWING_CREATE", string.format("New Drawing: %s", type))
+            return originalNew(type)
         end
-        
-        -- Check distance to coin (using CoinVisual position)
-        local distanceToCoin = (HumanoidRootPart.Position - coinPosition).Magnitude
-        if distanceToCoin <= config.CoinRadius then
-            print("[Movement] Close enough to collect")
-            return true
-        end
-        
-        -- Move to waypoint
-        if not moveToWaypoint(waypoint) then
-            return false
-        end
-        
-        -- Small pause between waypoints (more human-like)
-        if i < #waypoints then
-            local pause = 0.03 + math.random() * 0.07
-            task.wait(pause)
-        end
-    end
-    
-    return true
-end
-
--- ========== MAIN AUTOFARM LOOP ==========
-local function autofarmLoop()
-    print("[Autofarm v2] Starting CoinVisual targeting...")
-    print(string.format("Targeting: %s", config.TargetCoinVisual and "CoinVisual" or "Coin_Server"))
-    
-    while _G.Autofarm do
-        -- Safety checks
-        if not Character or not Character.Parent then
-            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            Humanoid = Character:WaitForChild("Humanoid")
-            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-        end
-        
-        -- Check if bag is full
-        if isBagFull() then
-            print("[Autofarm] Bag is full! Pausing...")
-            Humanoid:MoveTo(HumanoidRootPart.Position)
-            for i = 1, 10 do
-                if not _G.Autofarm then break end
-                if not isBagFull() then break end
-                task.wait(1)
-            end
-            continue
-        end
-        
-        -- Find closest coin (targeting CoinVisual position)
-        local coinData, distance = getClosestCoin()
-        
-        if not coinData then
-            print("[Autofarm] No active coins found. Waiting...")
-            Humanoid:MoveTo(HumanoidRootPart.Position)
-            
-            -- Look around naturally while waiting
-            if math.random() < 0.3 then
-                Humanoid.Jump = true
-            end
-            
-            task.wait(1.5)
-            continue
-        end
-        
-        -- Attempt tracking
-        coinData.Attempts = coinData.Attempts + 1
-        if coinData.Attempts > config.MaxAttemptsPerCoin then
-            print("[Autofarm] Skipping coin after", coinData.Attempts, "attempts")
-            coinData.IsCollecting = false
-            coinData.Collectible = false
-            task.wait(0.5)
-            continue
-        end
-        
-        -- Mark as collecting
-        coinData.IsCollecting = true
-        
-        -- Move to CoinVisual position
-        print(string.format("[Autofarm] Moving to coin (%.1f meters)", distance))
-        print(string.format("  Position: %s", tostring(coinData.Position)))
-        
-        local success = moveToCoinSmooth(coinData.Position, coinData)
-        
-        if success then
-            print("[Autofarm] Reached coin area")
-            
-            -- Very brief pause (makes it look natural)
-            task.wait(0.1 + math.random() * 0.2)
-            
-            -- Mark as collected
-            coinData.Attempts = 0
-            coinData.Collectible = false
-            
-            -- Small celebration sometimes
-            if math.random() < 0.2 then
-                Humanoid.Jump = true
-            end
-        else
-            print("[Autofarm] Failed to reach coin")
-        end
-        
-        coinData.IsCollecting = false
-        
-        -- Natural delay between attempts
-        task.wait(0.2 + math.random() * 0.4)
-    end
-    
-    print("[Autofarm] Stopped")
-    Humanoid:MoveTo(HumanoidRootPart.Position)
-end
-
--- ========== CONTROLS ==========
-function toggleAutofarm()
-    _G.Autofarm = not _G.Autofarm
-    
-    if _G.Autofarm then
-        print("[Autofarm v2] ENABLED - Targeting CoinVisual")
-        task.spawn(autofarmLoop)
-    else
-        print("[Autofarm v2] DISABLED")
+        hookRegistry["Drawing.new"] = Drawing.new
     end
 end
 
--- ========== DEBUG FUNCTIONS ==========
-local function debugCoinStructure()
-    print("\n=== DEBUG: Coin Structure ===")
-    local container = findCoinContainer()
-    if not container then
-        print("CoinContainer not found!")
-        return
+-- ============================================
+-- Signal & Connection Monitoring
+-- ============================================
+
+local function monitorSignals()
+    local originalGetConnections = getconnections
+    if originalGetConnections then
+        getconnections = function(signal)
+            logEvent("GET_CONNECTIONS", string.format("Inspecting connections on: %s", tostring(signal)))
+            return originalGetConnections(signal)
+        end
+        hookRegistry["getconnections"] = getconnections
     end
+end
+
+-- ============================================
+-- Analysis Startup
+-- ============================================
+
+local function initializeAnalysis()
+    logEvent("ANALYSIS", "Starting Eclipse Hub dynamic analysis...")
+    logEvent("CONFIG", string.format("Analysis started at: %.3f", analysisStartTime))
     
-    print("Found CoinContainer with", #container:GetChildren(), "children")
+    -- Setup all monitoring
+    monitorGlobalEnvironment()
+    hookSUSPICIOUSFunctions()
+    monitorHTTPRequests()
+    monitorMetatableHooks()
+    monitorDrawing()
+    monitorSignals()
     
-    for i, coin in pairs(container:GetChildren()) do
-        if coin.Name == "Coin_Server" then
-            print(string.format("\nCoin_Server #%d:", i))
-            print("  Transparency:", coin.Transparency)
-            print("  Position:", tostring(coin.Position))
-            
-            local visual = coin:FindFirstChild("CoinVisual")
-            if visual then
-                print("  Has CoinVisual: YES")
-                print("  Visual Position:", tostring(visual.Position))
-                print("  Visual Transparency:", visual.Transparency)
-            else
-                print("  Has CoinVisual: NO")
-            end
+    logEvent("ANALYSIS", "All monitoring hooks are active")
+    logEvent("ANALYSIS", "Waiting for Eclipse Hub execution...")
+    
+    -- Create a summary function
+    local function printSummary()
+        logEvent("SUMMARY", "=== ANALYSIS SUMMARY ===")
+        logEvent("SUMMARY", string.format("Total tracked calls: %d", #trackedCalls))
+        
+        local sortedCalls = {}
+        for funcName, count in pairs(trackedCalls) do
+            table.insert(sortedCalls, {name = funcName, count = count})
+        end
+        
+        table.sort(sortedCalls, function(a, b) return a.count > b.count end)
+        
+        logEvent("SUMMARY", "Top called functions:")
+        for i = 1, math.min(10, #sortedCalls) do
+            logEvent("SUMMARY", string.format("  %d. %s: %d calls", i, sortedCalls[i].name, sortedCalls[i].count))
+        end
+        
+        -- Check for Eclipse Hub specific patterns
+        local hasMainKey = getgenv and getgenv().mainKey ~= nil
+        logEvent("SUMMARY", string.format("mainKey in getgenv(): %s", tostring(hasMainKey)))
+        
+        if hasMainKey then
+            logEvent("DETECTION", "Eclipse Hub pattern detected: mainKey in getgenv()")
         end
     end
-    print("=== END DEBUG ===\n")
-end
-
--- ========== STARTUP ==========
--- Character reconnection
-LocalPlayer.CharacterAdded:Connect(function(char)
-    Character = char
-    task.wait(0.5)
-    Humanoid = Character:WaitForChild("Humanoid")
-    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
     
-    Humanoid.WalkSpeed = config.WalkSpeed
-    Humanoid.JumpPower = config.JumpPower
-end)
-
--- Auto-start if enabled
-if _G.Autofarm then
-    task.wait(1)
-    task.spawn(autofarmLoop)
+    -- Return summary function for manual calling
+    return printSummary
 end
 
-print("[Autofarm v2] System loaded!")
-print("Commands: toggleAutofarm(), debugCoinStructure()")
-print("Config: TargetCoinVisual =", config.TargetCoinVisual)
-print("Current status: Autofarm =", _G.Autofarm or false)
+-- ============================================
+-- Execution Flow
+-- ============================================
 
--- Run debug to verify structure
-task.wait(2)
-debugCoinStructure()
+-- Run analysis
+local printSummary = initializeAnalysis()
+
+-- Instructions for user
+print("\n" .. string.rep("=", 60))
+print("Eclipse Hub Dynamic Analysis Tool")
+print("=" .. string.rep("=", 59))
+print("\nInstructions:")
+print("1. This script is now monitoring all suspicious functions")
+print("2. Now execute Eclipse Hub script:")
+print("   getgenv().mainKey = 'p95c03dc5-f72b-406f-8ab9-5a868489aa99'")
+print("   local a,b,c,d,e=loadstring,request or http_request or (http and http.request) or (syn and syn.request),assert,tostring,'https://api.eclipsehub.xyz/auth';c(a and b,'Executor not Supported')a(b({Url=e..'?key='..d(mainKey),Headers={['User-Agent']='Eclipse'}}).Body)()")
+print("\n3. After Eclipse Hub loads, call: printSummary()")
+print("4. Check the console output or '" .. (ANALYSIS_CONFIG.OUTPUT_FILE or "console") .. "' for details")
+print(string.rep("=", 60) .. "\n")
+
+-- Make summary function globally accessible
+if getgenv then
+    getgenv().printAnalysisSummary = printSummary
+else
+    _G.printAnalysisSummary = printSummary
+end
+
+-- Return the summary function for immediate use if needed
+return printSummary
