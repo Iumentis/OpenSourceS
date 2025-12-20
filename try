@@ -1,145 +1,443 @@
--- Executor Performance Sniffer for Eclipse Hub
--- Run this IN YOUR EXECUTOR before the hub script
+-- ============================================
+-- COIN AUTOFARM SYSTEM
+-- Version: Optimized & Human-Like
+-- Features: Pathfinding, Smooth Movement, Anti-Detection
+-- ============================================
 
-print("=== EXECUTOR FREEZE DETECTOR ===")
-print("Starting detection for Eclipse Hub loading...")
-print("Will monitor for 15 seconds")
-print()
+-- ========== CONFIGURATION ==========
+local config = {
+    -- Movement settings
+    WalkSpeed = 22, -- Normal human walking speed
+    JumpPower = 50,
+    SmoothTurn = true, -- Smooth turning vs instant
+    TurnSmoothness = 0.6, -- 0-1, higher = smoother
+    
+    -- Collection settings
+    CoinRadius = 30, -- How close to get to coin
+    WaitAfterCollect = 0.01, -- Pause after collecting
+    MaxSearchDistance = 500, -- Don't look for coins too far
+    
+    -- Optimization settings
+    CacheCoins = true, -- Cache coin positions for performance
+    CacheTime = 1, -- Seconds between cache updates
+    PathRefreshRate = 0.2, -- How often to recalculate path
+    
+    -- Safety settings
+    MaxAttemptsPerCoin = 3, -- Give up after X attempts
+    StuckDetection = true, -- Detect if stuck
+    StuckTimeout = 5, -- Seconds before considering stuck
+}
 
--- Configuration
-local FREEZE_THRESHOLD = 0.3  -- Seconds - normal frames are 0.016s
-local LONG_FREEZE_THRESHOLD = 1.0  -- Seconds for major freezes
-local TOTAL_MONITOR_TIME = 15  -- Seconds to monitor
+-- ========== INITIALIZATION ==========
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
 
--- Trackers
-local freezeLog = {}
-local startTime = tick()
-local lastCheck = tick()
-local totalFreezeTime = 0
-local freezeCount = 0
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
--- Simple check using tick()
-local function checkForFreeze()
+-- Setup humanoid for natural movement
+Humanoid.WalkSpeed = config.WalkSpeed
+Humanoid.JumpPower = config.JumpPower
+Humanoid.AutoRotate = true -- Natural rotation
+
+-- ========== CORE FUNCTIONS ==========
+
+-- Cache system for performance
+local coinCache = {
+    activeCoins = {},
+    lastUpdate = 0,
+    container = nil
+}
+
+local function findCoinContainer()
+    if coinCache.container and coinCache.container.Parent then
+        return coinCache.container
+    end
+    
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChild("CoinContainer") then
+            coinCache.container = obj.CoinContainer
+            return coinCache.container
+        end
+    end
+    return nil
+end
+
+local function updateCoinCache()
     local currentTime = tick()
-    local frameTime = currentTime - lastCheck
     
-    if frameTime > FREEZE_THRESHOLD then
-        local severity = "MINOR"
-        if frameTime > LONG_FREEZE_THRESHOLD then
-            severity = "MAJOR"
-        end
-        
-        table.insert(freezeLog, {
-            time = currentTime - startTime,
-            duration = frameTime,
-            severity = severity
-        })
-        
-        totalFreezeTime = totalFreezeTime + frameTime
-        freezeCount = freezeCount + 1
-        
-        print(string.format("[FREEZE] t=%.2fs: %.3fs %s", 
-            currentTime - startTime, frameTime, severity))
+    -- Only update cache periodically
+    if currentTime - coinCache.lastUpdate < config.CacheTime then
+        return coinCache.activeCoins
     end
     
-    lastCheck = currentTime
-end
-
--- Method 1: Use executor's task.wait if available
-if task and task.wait then
-    print("Using task.wait() monitoring...")
-    
-    for i = 1, (TOTAL_MONITOR_TIME * 60) do  -- About 60 FPS
-        checkForFreeze()
-        task.wait(1/60)  -- Try to wait 1 frame
+    local container = findCoinContainer()
+    if not container then
+        coinCache.activeCoins = {}
+        return coinCache.activeCoins
     end
     
--- Method 2: Use basic while loop
-else
-    print("Using basic timing loop...")
-    local monitorEnd = tick() + TOTAL_MONITOR_TIME
+    local newActiveCoins = {}
     
-    while tick() < monitorEnd do
-        checkForFreeze()
-        -- Small delay to prevent CPU overload
-        if wait then
-            wait(1/60)
-        else
-            -- Busy wait as fallback
-            local target = tick() + 1/60
-            while tick() < target do end
+    for _, coin in pairs(container:GetChildren()) do
+        if coin.Name == "Coin_Server" and coin:IsA("BasePart") then
+            -- Check if coin is collectible
+            if coin.Transparency < 1 and coin.Parent and coin.Parent.Parent then
+                table.insert(newActiveCoins, {
+                    Part = coin,
+                    Position = coin.Position,
+                    LastSeen = currentTime,
+                    Attempts = 0,
+                    IsCollecting = false
+                })
+            end
         end
     end
+    
+    coinCache.activeCoins = newActiveCoins
+    coinCache.lastUpdate = currentTime
+    
+    return newActiveCoins
 end
 
--- Generate Report
-print("\n" .. string.rep("=", 50))
-print("FREEZE DETECTION REPORT")
-print(string.rep("=", 50))
-
-print("Monitoring duration: " .. TOTAL_MONITOR_TIME .. " seconds")
-print("Total freezes detected: " .. freezeCount)
-print("Total freeze time: " .. string.format("%.2f seconds", totalFreezeTime))
-print("Percentage frozen: " .. string.format("%.1f%%", (totalFreezeTime / TOTAL_MONITOR_TIME) * 100))
-
--- Find the longest freeze
-if #freezeLog > 0 then
-    table.sort(freezeLog, function(a, b)
-        return a.duration > b.duration
+local function isBagFull()
+    local success, result = pcall(function()
+        local gui = LocalPlayer.PlayerGui:FindFirstChild("MainGUI")
+        if not gui then return false end
+        
+        local gameGui = gui:FindFirstChild("Game")
+        if not gameGui then return false end
+        
+        local coinBags = gameGui:FindFirstChild("CoinBags")
+        if not coinBags then return false end
+        
+        local container = coinBags:FindFirstChild("Container")
+        if not container then return false end
+        
+        local snowToken = container:FindFirstChild("SnowToken")
+        if not snowToken then return false end
+        
+        -- Check coin count
+        local currencyFrame = snowToken:FindFirstChild("CurrencyFrame")
+        if currencyFrame then
+            local icon = currencyFrame:FindFirstChild("Icon")
+            if icon then
+                local coinsText = icon:FindFirstChild("Coins")
+                if coinsText and coinsText:IsA("TextLabel") then
+                    local coins = tonumber(coinsText.Text)
+                    if coins and coins >= 50 then
+                        return true
+                    end
+                end
+            end
+        end
+        
+        -- Check full indicator
+        local fullIndicator = snowToken:FindFirstChild("Full")
+        if fullIndicator and fullIndicator.Visible then
+            return true
+        end
+        
+        return false
     end)
     
-    print("\nTOP 3 FREEZES:")
-    for i = 1, math.min(3, #freezeLog) do
-        local freeze = freezeLog[i]
-        print(string.format("%d. %.3fs at t=%.2fs (%s)", 
-            i, freeze.duration, freeze.time, freeze.severity))
-    end
+    return success and result or false
+end
+
+local function getClosestCoin()
+    local activeCoins = updateCoinCache()
+    if #activeCoins == 0 then return nil end
     
-    -- Look for the "Eclipse Hub loading" pattern
-    local hubFreezeDetected = false
-    for _, freeze in ipairs(freezeLog) do
-        if freeze.duration > 2.5 and freeze.duration < 6.0 then
-            hubFreezeDetected = true
-            print("\n🎯 ECLIPSE HUB SIGNATURE DETECTED!")
-            print(string.format("   Found %.3fs freeze at t=%.2fs", 
-                freeze.duration, freeze.time))
-            print("   This matches the hub loading time")
-            break
+    local closestCoin = nil
+    local closestDistance = math.huge
+    local playerPos = HumanoidRootPart.Position
+    
+    for _, coinData in pairs(activeCoins) do
+        if coinData.Part and coinData.Part.Parent then
+            local distance = (coinData.Position - playerPos).Magnitude
+            
+            -- Skip if too far or already being collected
+            if distance < closestDistance and distance < config.MaxSearchDistance 
+               and not coinData.IsCollecting then
+                closestDistance = distance
+                closestCoin = coinData
+            end
         end
     end
     
-    if not hubFreezeDetected then
-        print("\n⚠️ No hub loading signature found")
-        print("   (Either didn't load or was very fast)")
-    end
-else
-    print("\n📊 No significant freezes detected")
+    return closestCoin, closestDistance
 end
 
--- Calculate anti-cheat thresholds
-print("\n" .. string.rep("-", 50))
-print("ANTI-CHEAT THRESHOLDS SUGGESTED:")
-print("1. Freeze detection: >" .. FREEZE_THRESHOLD .. "s")
-print("2. Major freeze: >" .. LONG_FREEZE_THRESHOLD .. "s")
-print("3. Hub signature: 2.5s - 6.0s freeze")
+-- ========== PATHFINDING SYSTEM ==========
+local currentPath = nil
+local pathGoal = nil
+local lastPathUpdate = 0
+local stuckCheck = {
+    lastPosition = Vector3.new(),
+    stuckTime = 0
+}
 
--- Suggest detection logic
-print("\nDETECTION LOGIC:")
-print("if freeze > 2.5s and freeze < 6.0s then")
-print("   -- Eclipse Hub loading detected")
-print("   kickPlayer()")
-print("end")
-
--- Save data if writefile is available
-if writefile then
-    local csv = "Time,Duration,Severity\n"
-    for _, freeze in ipairs(freezeLog) do
-        csv = csv .. string.format("%.2f,%.3f,%s\n", 
-            freeze.time, freeze.duration, freeze.severity)
+local function createSmoothPath(destination)
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+        WaypointSpacing = 4,
+        Costs = {
+            Water = 20, -- Avoid water if possible
+            Lava = math.huge -- Never go through lava
+        }
+    })
+    
+    path:ComputeAsync(HumanoidRootPart.Position, destination)
+    
+    if path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        
+        -- Filter waypoints for smoother movement
+        local filteredWaypoints = {}
+        for i, waypoint in ipairs(waypoints) do
+            -- Skip some waypoints for more direct movement (but still follow path)
+            if i == 1 or i == #waypoints or i % 2 == 0 then
+                table.insert(filteredWaypoints, waypoint)
+            end
+        end
+        
+        return filteredWaypoints
     end
-    writefile("freeze_log.csv", csv)
-    print("\n📁 Data saved to 'freeze_log.csv'")
+    
+    return nil
 end
 
-print("\n=== NOW RUN ECLIPSE HUB TO TEST ===")
-print("Then compare freeze times with above report")
+local function moveToWaypoint(waypoint)
+    Humanoid:MoveTo(waypoint.Position)
+    
+    -- Add human-like delay
+    if waypoint.Action == Enum.PathWaypointAction.Jump then
+        Humanoid.Jump = true
+        task.wait(0.2) -- Small pause for jump
+    end
+    
+    -- Wait until reached or timeout
+    local startTime = tick()
+    while (HumanoidRootPart.Position - waypoint.Position).Magnitude > 4 do
+        local elapsed = tick() - startTime
+        
+        -- Timeout after 3 seconds per waypoint
+        if elapsed > 3 then
+            return false -- Failed to reach waypoint
+        end
+        
+        -- Check if stuck
+        if config.StuckDetection then
+            local movedDistance = (HumanoidRootPart.Position - stuckCheck.lastPosition).Magnitude
+            if movedDistance < 1 then
+                stuckCheck.stuckTime = stuckCheck.stuckTime + RunService.Heartbeat:Wait()
+                if stuckCheck.stuckTime > config.StuckTimeout then
+                    -- Try jumping to get unstuck
+                    Humanoid.Jump = true
+                    stuckCheck.stuckTime = 0
+                end
+            else
+                stuckCheck.lastPosition = HumanoidRootPart.Position
+                stuckCheck.stuckTime = 0
+            end
+        end
+        
+        RunService.Heartbeat:Wait()
+    end
+    
+    return true
+end
+
+local function moveToCoinSmooth(coinPosition)
+    local waypoints = createSmoothPath(coinPosition)
+    if not waypoints then return false end
+    
+    -- Reset stuck detection
+    stuckCheck.lastPosition = HumanoidRootPart.Position
+    stuckCheck.stuckTime = 0
+    
+    -- Follow waypoints with human-like pacing
+    for i, waypoint in ipairs(waypoints) do
+        -- Skip last few meters for direct collection
+        if i == #waypoints then
+            local distanceToCoin = (HumanoidRootPart.Position - coinPosition).Magnitude
+            if distanceToCoin <= config.CoinRadius then
+                return true -- Close enough to collect
+            end
+        end
+        
+        if not moveToWaypoint(waypoint) then
+            return false -- Failed to reach waypoint
+        end
+        
+        -- Small pause between waypoints (human-like)
+        if i < #waypoints then
+            task.wait(0.05 + math.random() * 0.1) -- Random 50-150ms delay
+        end
+    end
+    
+    return true
+end
+
+-- ========== MAIN AUTOFARM LOOP ==========
+local function autofarmLoop()
+    print("[Autofarm] Starting optimized coin collection...")
+    
+    while _G.Autofarm do
+        -- Safety checks
+        if not Character or not Character.Parent then
+            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            Humanoid = Character:WaitForChild("Humanoid")
+            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+        end
+        
+        -- Check if bag is full
+        if isBagFull() then
+            print("[Autofarm] Bag is full! Waiting...")
+            Humanoid:MoveTo(HumanoidRootPart.Position) -- Stop moving
+            task.wait(2)
+            continue
+        end
+        
+        -- Find closest coin
+        local coinData, distance = getClosestCoin()
+        
+        if not coinData then
+            -- No coins found, wait and search again
+            print("[Autofarm] No coins found. Searching...")
+            Humanoid:MoveTo(HumanoidRootPart.Position)
+            task.wait(1)
+            continue
+        end
+        
+        -- Check if we should attempt to collect this coin
+        coinData.Attempts = coinData.Attempts + 1
+        if coinData.Attempts > config.MaxAttemptsPerCoin then
+            print("[Autofarm] Skipping coin after too many attempts")
+            coinData.IsCollecting = false
+            task.wait(0.5)
+            continue
+        end
+        
+        -- Mark as collecting
+        coinData.IsCollecting = true
+        
+        -- Move to coin with smooth pathfinding
+        print(string.format("[Autofarm] Moving to coin (%d meters away)", math.floor(distance)))
+        
+        local success = moveToCoinSmooth(coinData.Position)
+        
+        if success then
+            print("[Autofarm] Reached coin area")
+            
+            -- Small human-like pause before "collecting"
+            task.wait(0.2 + math.random() * 0.3)
+            
+            -- Simulate collection by waiting (actual collection happens via proximity)
+            task.wait(config.WaitAfterCollect)
+            
+            -- Reset attempts for next time
+            coinData.Attempts = 0
+        else
+            print("[Autofarm] Failed to reach coin")
+        end
+        
+        coinData.IsCollecting = false
+        
+        -- Small random delay between coins (human behavior)
+        task.wait(0.1 + math.random() * 0.3)
+    end
+    
+    print("[Autofarm] Stopped")
+    Humanoid:MoveTo(HumanoidRootPart.Position) -- Stop moving
+end
+
+-- ========== CONTROLS ==========
+local function toggleAutofarm()
+    _G.Autofarm = not _G.Autofarm
+    
+    if _G.Autofarm then
+        print("[Autofarm] ENABLED")
+        task.spawn(autofarmLoop)
+    else
+        print("[Autofarm] DISABLED")
+    end
+end
+
+-- ========== VISUAL DEBUG (Optional) ==========
+local function createVisualDebug()
+    if not _G.PathVisualizer then
+        _G.PathVisualizer = {}
+    end
+    
+    -- Clean up old visuals
+    for _, part in pairs(_G.PathVisualizer) do
+        if part then part:Destroy() end
+    end
+    
+    _G.PathVisualizer = {}
+    
+    -- Optional: Create path visualization
+    local function visualizePath(waypoints)
+        for i, waypoint in ipairs(waypoints) do
+            local part = Instance.new("Part")
+            part.Size = Vector3.new(1, 1, 1)
+            part.Position = waypoint.Position
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 0.7
+            part.Color = Color3.fromRGB(0, 255, 0)
+            part.Parent = Workspace
+            
+            table.insert(_G.PathVisualizer, part)
+            
+            -- Add label for waypoint number
+            local billboard = Instance.new("BillboardGui")
+            billboard.Size = UDim2.new(0, 50, 0, 50)
+            billboard.StudsOffset = Vector3.new(0, 2, 0)
+            billboard.Adornee = part
+            
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.Text = tostring(i)
+            label.TextColor3 = Color3.new(1, 1, 1)
+            label.BackgroundTransparency = 1
+            label.Parent = billboard
+            
+            billboard.Parent = part
+        end
+    end
+end
+
+-- ========== STARTUP ==========
+-- Character reconnection handling
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char
+    Humanoid = char:WaitForChild("Humanoid")
+    HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
+    
+    -- Reapply settings
+    Humanoid.WalkSpeed = config.WalkSpeed
+    Humanoid.JumpPower = config.JumpPower
+end)
+
+-- Start autofarm if enabled
+if _G.Autofarm then
+    task.spawn(autofarmLoop)
+end
+
+-- ============================================
+-- USAGE:
+-- 1. Set _G.Autofarm = true to start
+-- 2. Use toggleAutofarm() to toggle on/off
+-- ============================================
+
+print("[Coin Autofarm] System loaded successfully!")
+print("Set _G.Autofarm = true to begin")
+print("Current status:", _G.Autofarm)
