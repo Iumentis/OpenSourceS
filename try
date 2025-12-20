@@ -1,421 +1,115 @@
-warn("v3")
+warn("v4")
 
--- Configuration
-local ANALYSIS_CONFIG = {
-    LOG_DETAILS = true,            -- Log function arguments and returns
-    LOG_ENV_CHANGES = true,        -- Log changes to global environment
-    LOG_NETWORK_REQUESTS = true,   -- Log HTTP requests
-    LOG_HOOKS = true,              -- Log function/metatable hooks
-    LOG_DEBUG_OPS = true,          -- Log debug operations
-    OUTPUT_FILE = "eclipse_analysis.log", -- Optional file output
-}
+local logs = {}
+local startTime = os.clock()
 
--- Tracking tables
-local trackedCalls = {}
-local originalFunctions = {}
-local environmentSnapshot = {}
-local hookRegistry = {}
-local analysisStartTime = os.clock()
-
--- ============================================
--- Core Monitoring Functions
--- ============================================
-
-local function logEvent(eventType, details)
-    local timestamp = string.format("[%.3f]", os.clock() - analysisStartTime)
-    local message = string.format("%s %s: %s", timestamp, eventType, details)
-    
-    print(message)
-    
-    if ANALYSIS_CONFIG.OUTPUT_FILE then
-        writefile(ANALYSIS_CONFIG.OUTPUT_FILE, message .. "\n", true)
-    end
+local function safeLog(event, details)
+    local timestamp = string.format("[%.3f]", os.clock() - startTime)
+    local entry = timestamp .. " " .. event .. ": " .. details
+    table.insert(logs, entry)
+    print(entry)
 end
 
-local function createHookWrapper(funcName, originalFunc, context)
-    return function(...)
-        local args = {...}
-        local success, result
-        
-        -- Log the call
-        if ANALYSIS_CONFIG.LOG_DETAILS then
-            local argStr = ""
-            for i, v in ipairs(args) do
-                argStr = argStr .. string.format("arg%d=%s ", i, type(v))
-                if type(v) == "string" and #v < 50 then
-                    argStr = argStr .. string.format("(%s) ", v)
-                end
-            end
-            logEvent("CALL", string.format("%s.%s(%s)", context, funcName, argStr))
-        else
-            logEvent("CALL", string.format("%s.%s", context, funcName))
-        end
-        
-        -- Track the call
-        trackedCalls[funcName] = (trackedCalls[funcName] or 0) + 1
-        
-        -- Execute original function
-        success, result = pcall(originalFunc, ...)
-        
-        -- Log return
-        if success and ANALYSIS_CONFIG.LOG_DETAILS then
-            logEvent("RETURN", string.format("%s.%s -> %s", context, funcName, type(result)))
-        elseif not success then
-            logEvent("ERROR", string.format("%s.%s: %s", context, funcName, result))
-        end
-        
-        return result
-    end
-end
-
--- ============================================
--- Environment Monitoring
--- ============================================
-
-local function monitorGlobalEnvironment()
-    if not ANALYSIS_CONFIG.LOG_ENV_CHANGES then return end
+-- Monitor only, don't modify anything
+local function passiveMonitor()
+    safeLog("ANALYSIS", "Passive monitor started - waiting for Eclipse")
     
-    -- Take initial snapshot of _G and shared
-    environmentSnapshot._G = {}
-    environmentSnapshot.shared = {}
-    
-    for k, v in pairs(_G) do
-        environmentSnapshot._G[k] = true
-    end
-    
-    if shared then
-        for k, v in pairs(shared) do
-            environmentSnapshot.shared[k] = true
-        end
-    end
-    
-    -- Monitor _G for new entries
-    local _G_metatable = getrawmetatable and getrawmetatable(_G)
-    if _G_metatable then
-        local original__newindex = _G_metatable.__newindex
-        _G_metatable.__newindex = function(t, k, v)
-            if not environmentSnapshot._G[k] then
-                logEvent("ENV_SET", string.format("_G.%s = %s (new)", k, type(v)))
-                environmentSnapshot._G[k] = true
-            end
-            return original__newindex(t, k, v)
-        end
-        hookRegistry["_G_metatable"] = _G_metatable
-    end
-end
-
--- ============================================
--- Function Hooking System
--- ============================================
-
-local function hookSUSPICIOUSFunctions()
-    -- List of functions to monitor (from sUNC)
-    local functionsToHook = {
-        -- Environment functions
-        "getgenv", "getrenv", "getgc", "getrawmetatable",
-        "setrawmetatable", "setreadonly", "isreadonly",
-        
-        -- Debug functions
-        "debug.getconstants", "debug.getconstant", "debug.setconstant",
-        "debug.getupvalues", "debug.getupvalue", "debug.setupvalue",
-        "debug.getstack", "debug.setstack", "debug.getprotos",
-        "debug.getproto",
-        
-        -- Hooking functions
-        "hookfunction", "hookmetamethod", "newcclosure",
-        
-        -- Script functions
-        "getscriptbytecode", "getscripthash", "getscriptclosure",
-        "getsenv", "getscripts", "getrunningscripts",
-        "getloadedmodules", "getcallingscript",
-        
-        -- Instance functions
-        "getinstances", "getnilinstances", "cloneref", "gethui",
-        "getcallbackvalue", "compareinstances",
-        
-        -- Other suspicious functions
-        "identifyexecutor", "loadstring",
-        "crypt.base64encode", "crypt.base64decode",
+    -- Store original functions to check if they change
+    local originals = {
+        getgenv = getgenv,
+        loadstring = loadstring,
+        getrenv = getrenv,
+        debug_getconstants = debug.getconstants
     }
     
-    -- Hook functions in different contexts
-    local contexts = {_G, getgenv and getgenv() or {}, debug}
+    -- Check every 0.1 seconds for changes
+    local checkInterval = 0.1
+    local lastCheck = os.clock()
     
-    for _, context in ipairs(contexts) do
-        if type(context) == "table" then
-            for _, funcName in ipairs(functionsToHook) do
-                local original = context[funcName]
-                if type(original) == "function" then
-                    -- Save original
-                    originalFunctions[funcName] = original
-                    
-                    -- Create and set hook
-                    context[funcName] = createHookWrapper(funcName, original, "global")
-                    hookRegistry[funcName] = context[funcName]
-                    
-                    logEvent("HOOK_SET", string.format("Hooked: %s", funcName))
+    local monitorThread
+    monitorThread = coroutine.create(function()
+        while true do
+            local now = os.clock()
+            if now - lastCheck >= checkInterval then
+                -- Check if functions have been hooked/modified
+                if getgenv and getgenv ~= originals.getgenv then
+                    safeLog("DETECTION", "getgenv was modified!")
                 end
-            end
-        end
-    end
-end
-
--- ============================================
--- HTTP Request Monitoring
--- ============================================
-
-local function monitorHTTPRequests()
-    if not ANALYSIS_CONFIG.LOG_NETWORK_REQUESTS then return end
-    
-    -- Monitor all HTTP request variants
-    local httpVariants = {"request", "http_request", "syn.request"}
-    
-    for _, variant in ipairs(httpVariants) do
-        local original = _G[variant] or (syn and syn[variant])
-        if type(original) == "function" then
-            originalFunctions[variant] = original
-            
-            local hooked = function(options)
-                if options and options.Url then
-                    logEvent("HTTP_REQUEST", string.format("URL: %s", options.Url))
-                    if options.Headers then
-                        logEvent("HTTP_HEADERS", string.format("Headers: %s", tostring(options.Headers)))
+                
+                if loadstring and loadstring ~= originals.loadstring then
+                    safeLog("DETECTION", "loadstring was hooked!")
+                end
+                
+                if debug.getconstants and debug.getconstants ~= originals.debug_getconstants then
+                    safeLog("DETECTION", "debug.getconstants was hooked!")
+                end
+                
+                -- Check for Eclipse signature: mainKey in getgenv
+                if getgenv and type(getgenv()) == "table" then
+                    local env = getgenv()
+                    if env.mainKey and tostring(env.mainKey):match("^p95c") then
+                        safeLog("DETECTION", "Eclipse Hub mainKey found: " .. tostring(env.mainKey))
                     end
                 end
-                return original(options)
+                
+                lastCheck = now
             end
-            
-            if _G[variant] then
-                _G[variant] = hooked
-            elseif syn then
-                syn[variant] = hooked
-            end
-            hookRegistry[variant] = hooked
-        end
-    end
-end
-
--- ============================================
--- Metatable & Hook Detection
--- ============================================
-
-local function monitorMetatableHooks()
-    if not ANALYSIS_CONFIG.LOG_HOOKS then return end
-    if not getrawmetatable then return end  -- Safety check
-    
-    -- Track metatable changes on key objects
-    local importantObjects = {
-        game, workspace, game:GetService("Players")
-    }
-    
-    for _, obj in ipairs(importantObjects) do
-        if obj then
-            local success, mt = pcall(getrawmetatable, obj)
-            if success and mt then
-                -- Check if we can modify this metatable
-                if not isreadonly or pcall(function() return not isreadonly(mt) end) then
-                    local originalIndex = mt.__index
-                    local originalNamecall = mt.__namecall
-                    local originalNewindex = mt.__newindex
-                    
-                    -- Hook __index if it exists
-                    if originalIndex then
-                        local newIndex = function(self, key)
-                            logEvent("META_INDEX", string.format("%s.%s accessed via metatable", 
-                                tostring(self), key))
-                            return originalIndex(self, key)
-                        end
-                        
-                        local setSuccess = pcall(function()
-                            mt.__index = newIndex
-                        end)
-                        
-                        if setSuccess then
-                            logEvent("HOOK_SET", string.format("Hooked __index for %s", tostring(obj)))
-                        end
-                    end
-                    
-                    -- Hook __namecall if it exists
-                    if originalNamecall then
-                        local newNamecall = function(self, ...)
-                            local method = getnamecallmethod and getnamecallmethod() or "unknown"
-                            logEvent("META_NAMECALL", string.format("%s:%s() called via metatable", 
-                                tostring(self), method))
-                            return originalNamecall(self, ...)
-                        end
-                        
-                        local setSuccess = pcall(function()
-                            mt.__namecall = newNamecall
-                        end)
-                        
-                        if setSuccess then
-                            logEvent("HOOK_SET", string.format("Hooked __namecall for %s", tostring(obj)))
-                        end
-                    end
-                    
-                    -- Hook __newindex if it exists
-                    if originalNewindex then
-                        local newNewindex = function(self, key, value)
-                            logEvent("META_NEWINDEX", string.format("%s.%s = %s via metatable", 
-                                tostring(self), key, type(value)))
-                            return originalNewindex(self, key, value)
-                        end
-                        
-                        local setSuccess = pcall(function()
-                            mt.__newindex = newNewindex
-                        end)
-                        
-                        if setSuccess then
-                            logEvent("HOOK_SET", string.format("Hooked __newindex for %s", tostring(obj)))
-                        end
-                    end
-                else
-                    logEvent("WARNING", string.format("Metatable for %s is readonly", tostring(obj)))
-                end
-            end
-        end
-    end
-end
-
--- ============================================
--- Drawing & UI Monitoring
--- ============================================
-
-local function monitorDrawing()
-    if not Drawing then return end
-    
-    -- Check if we can modify Drawing.new
-    local originalNew = Drawing.new
-    local setSuccess, errorMsg = pcall(function()
-        Drawing.new = function(type)
-            logEvent("DRAWING_CREATE", string.format("New Drawing: %s", type))
-            return originalNew(type)
+            wait(checkInterval)
         end
     end)
     
-    if setSuccess then
-        hookRegistry["Drawing.new"] = Drawing.new
-        logEvent("HOOK_SET", "Hooked Drawing.new successfully")
-    else
-        -- Alternative: Wrap the function without replacing it
-        logEvent("WARNING", string.format("Cannot hook Drawing.new: %s", errorMsg))
-        
-        -- Monitor calls indirectly by tracking created objects
-        local drawingTable = getgc and getgc()
-        if drawingTable then
-            -- This would require scanning getgc() for Drawing objects
-            logEvent("INFO", "Drawing monitoring limited - Drawing table is readonly")
-        end
-    end
+    coroutine.resume(monitorThread)
     
-    -- Also monitor other Drawing methods if accessible
-    local drawingMethods = {"Circle", "Square", "Line", "Text", "Image", "Quad"}
-    for _, method in ipairs(drawingMethods) do
-        if Drawing[method] and type(Drawing[method]) == "function" then
-            local original = Drawing[method]
-            local success = pcall(function()
-                Drawing[method] = function(...)
-                    logEvent("DRAWING_CALL", string.format("Drawing.%s()", method))
-                    return original(...)
-                end
-            end)
-            if success then
-                hookRegistry["Drawing." .. method] = Drawing[method]
+    return function()
+        safeLog("SUMMARY", "=== Analysis Complete ===")
+        safeLog("SUMMARY", "Total log entries: " .. #logs)
+        
+        -- Count Eclipse-specific patterns
+        local eclipsePatterns = {
+            mainKey = 0,
+            getrenv = 0,
+            bytecode_load = 0,
+            getgenv_mod = 0
+        }
+        
+        for _, log in ipairs(logs) do
+            if log:find("mainKey") then eclipsePatterns.mainKey = eclipsePatterns.mainKey + 1 end
+            if log:find("getrenv") then eclipsePatterns.getrenv = eclipsePatterns.getrenv + 1 end
+            if log:find("bytecode") then eclipsePatterns.bytecode_load = eclipsePatterns.bytecode_load + 1 end
+            if log:find("getgenv.*modif") then eclipsePatterns.getgenv_mod = eclipsePatterns.getgenv_mod + 1 end
+        end
+        
+        for pattern, count in pairs(eclipsePatterns) do
+            if count > 0 then
+                safeLog("PATTERN", pattern .. ": " .. count .. " occurrences")
             end
         end
+        
+        -- Save to file
+        writefile("eclipse_analysis_safe.txt", table.concat(logs, "\n"))
+        safeLog("FILE", "Logs saved to eclipse_analysis_safe.txt")
     end
 end
 
--- ============================================
--- Signal & Connection Monitoring
--- ============================================
+-- Run monitor
+local printSummary = passiveMonitor()
 
-local function monitorSignals()
-    local originalGetConnections = getconnections
-    if originalGetConnections then
-        getconnections = function(signal)
-            logEvent("GET_CONNECTIONS", string.format("Inspecting connections on: %s", tostring(signal)))
-            return originalGetConnections(signal)
-        end
-        hookRegistry["getconnections"] = getconnections
-    end
-end
-
--- ============================================
--- Analysis Startup
--- ============================================
-
-local function initializeAnalysis()
-    logEvent("ANALYSIS", "Starting Eclipse Hub dynamic analysis...")
-    logEvent("CONFIG", string.format("Analysis started at: %.3f", analysisStartTime))
-    
-    -- Setup all monitoring
-    monitorGlobalEnvironment()
-    hookSUSPICIOUSFunctions()
-    monitorHTTPRequests()
-    monitorMetatableHooks()
-    monitorDrawing()
-    monitorSignals()
-    
-    logEvent("ANALYSIS", "All monitoring hooks are active")
-    logEvent("ANALYSIS", "Waiting for Eclipse Hub execution...")
-    
-    -- Create a summary function
-    local function printSummary()
-        logEvent("SUMMARY", "=== ANALYSIS SUMMARY ===")
-        logEvent("SUMMARY", string.format("Total tracked calls: %d", #trackedCalls))
-        
-        local sortedCalls = {}
-        for funcName, count in pairs(trackedCalls) do
-            table.insert(sortedCalls, {name = funcName, count = count})
-        end
-        
-        table.sort(sortedCalls, function(a, b) return a.count > b.count end)
-        
-        logEvent("SUMMARY", "Top called functions:")
-        for i = 1, math.min(10, #sortedCalls) do
-            logEvent("SUMMARY", string.format("  %d. %s: %d calls", i, sortedCalls[i].name, sortedCalls[i].count))
-        end
-        
-        -- Check for Eclipse Hub specific patterns
-        local hasMainKey = getgenv and getgenv().mainKey ~= nil
-        logEvent("SUMMARY", string.format("mainKey in getgenv(): %s", tostring(hasMainKey)))
-        
-        if hasMainKey then
-            logEvent("DETECTION", "Eclipse Hub pattern detected: mainKey in getgenv()")
-        end
-    end
-    
-    -- Return summary function for manual calling
-    return printSummary
-end
-
--- ============================================
--- Execution Flow
--- ============================================
-
--- Run analysis
-local printSummary = initializeAnalysis()
-
--- Instructions for user
 print("\n" .. string.rep("=", 60))
-print("Eclipse Hub Dynamic Analysis Tool")
+print("SAFE Eclipse Hub Monitor Running")
 print("=" .. string.rep("=", 59))
-print("\nInstructions:")
-print("1. This script is now monitoring all suspicious functions")
-print("2. Now execute Eclipse Hub script:")
-print("   getgenv().mainKey = 'p95c03dc5-f72b-406f-8ab9-5a868489aa99'")
-print("   local a,b,c,d,e=loadstring,request or http_request or (http and http.request) or (syn and syn.request),assert,tostring,'https://api.eclipsehub.xyz/auth';c(a and b,'Executor not Supported')a(b({Url=e..'?key='..d(mainKey),Headers={['User-Agent']='Eclipse'}}).Body)()")
-print("\n3. After Eclipse Hub loads, call: printSummary()")
-print("4. Check the console output or '" .. (ANALYSIS_CONFIG.OUTPUT_FILE or "console") .. "' for details")
+print("\nThis monitor will NOT crash Eclipse Hub")
+print("It passively watches for Eclipse signatures:")
+print("1. mainKey in getgenv()")
+print("2. getrenv() calls")
+print("3. loadstring() with bytecode")
+print("4. Function hooking patterns")
+print("\nRun Eclipse Hub now...")
+print("After it loads, call: printSummary()")
 print(string.rep("=", 60) .. "\n")
 
--- Make summary function globally accessible
+-- Make summary available
 if getgenv then
-    getgenv().printAnalysisSummary = printSummary
-else
-    _G.printAnalysisSummary = printSummary
+    getgenv().printSummary = printSummary
 end
 
--- Return the summary function for immediate use if needed
 return printSummary
