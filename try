@@ -88,7 +88,7 @@ local function updateCoinCache()
     for _, coin in pairs(container:GetChildren()) do
         if coin.Name == "Coin_Server" and coin:IsA("BasePart") then
             -- Check if coin is collectible
-            if coin.Transparency < 0 and coin.Parent and coin.Parent.Parent then
+            if coin.Transparency == 1 and coin.Parent and coin.Parent.Parent then
                 table.insert(newActiveCoins, {
                     Part = coin,
                     Position = coin.Position,
