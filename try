@@ -1,9 +1,8 @@
-warn("v1")
+warn("v2 - Targeting CoinVisual instead of Coin_Server")
 
 -- ============================================
--- COIN AUTOFARM SYSTEM
--- Version: Optimized & Human-Like
--- Features: Pathfinding, Smooth Movement, Anti-Detection
+-- COIN AUTOFARM SYSTEM v2
+-- Version: Targets CoinVisual for precise movement
 -- ============================================
 
 -- ========== CONFIGURATION ==========
@@ -11,23 +10,27 @@ local config = {
     -- Movement settings
     WalkSpeed = 22, -- Normal human walking speed
     JumpPower = 50,
-    SmoothTurn = true, -- Smooth turning vs instant
-    TurnSmoothness = 0.6, -- 0-1, higher = smoother
+    SmoothTurn = true,
+    TurnSmoothness = 0.6,
     
     -- Collection settings
-    CoinRadius = 30, -- How close to get to coin
-    WaitAfterCollect = 0.01, -- Pause after collecting
-    MaxSearchDistance = 500, -- Don't look for coins too far
+    CoinRadius = 50, -- How close to get to CoinVisual (smaller radius)
+    WaitAfterCollect = 0.01,
+    MaxSearchDistance = 500,
     
     -- Optimization settings
-    CacheCoins = true, -- Cache coin positions for performance
-    CacheTime = 1, -- Seconds between cache updates
-    PathRefreshRate = 0.2, -- How often to recalculate path
+    CacheCoins = true,
+    CacheTime = 1,
+    PathRefreshRate = 0.2,
     
     -- Safety settings
-    MaxAttemptsPerCoin = 3, -- Give up after X attempts
-    StuckDetection = true, -- Detect if stuck
-    StuckTimeout = 5, -- Seconds before considering stuck
+    MaxAttemptsPerCoin = 3,
+    StuckDetection = true,
+    StuckTimeout = 5,
+    
+    -- New: CoinVisual targeting
+    TargetCoinVisual = true, -- Set to false to target Coin_Server instead
+    VisualPartName = "CoinVisual"
 }
 
 -- ========== INITIALIZATION ==========
@@ -41,10 +44,7 @@ local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
--- Setup humanoid for natural movement
-Humanoid.WalkSpeed = config.WalkSpeed
-Humanoid.JumpPower = config.JumpPower
-Humanoid.AutoRotate = true -- Natural rotation
+Humanoid.AutoRotate = true
 
 -- ========== CORE FUNCTIONS ==========
 
@@ -60,6 +60,14 @@ local function findCoinContainer()
         return coinCache.container
     end
     
+    -- Search in Workspace.IceCastle
+    local iceCastle = Workspace:FindFirstChild("IceCastle")
+    if iceCastle and iceCastle:FindFirstChild("CoinContainer") then
+        coinCache.container = iceCastle.CoinContainer
+        return coinCache.container
+    end
+    
+    -- Fallback: search all models
     for _, obj in pairs(Workspace:GetChildren()) do
         if obj:IsA("Model") and obj:FindFirstChild("CoinContainer") then
             coinCache.container = obj.CoinContainer
@@ -67,6 +75,21 @@ local function findCoinContainer()
         end
     end
     return nil
+end
+
+local function getCoinVisualPosition(coinServer)
+    -- Get the actual CoinVisual part for precise targeting
+    if not coinServer or not coinServer.Parent then return nil end
+    
+    if config.TargetCoinVisual then
+        local coinVisual = coinServer:FindFirstChild(config.VisualPartName)
+        if coinVisual and coinVisual:IsA("BasePart") then
+            return coinVisual.Position
+        end
+    end
+    
+    -- Fallback to Coin_Server position
+    return coinServer.Position
 end
 
 local function updateCoinCache()
@@ -85,16 +108,23 @@ local function updateCoinCache()
     
     local newActiveCoins = {}
     
-    for _, coin in pairs(container:GetChildren()) do
-        if coin.Name == "Coin_Server" and coin:IsA("BasePart") then
-            -- Check if coin is collectible
-            if coin.Transparency == 1 and coin.Parent and coin.Parent.Parent then
+    for _, coinServer in pairs(container:GetChildren()) do
+        if coinServer.Name == "Coin_Server" and coinServer:IsA("BasePart") then
+            -- Check if coin is collectible (Transparency = 1)
+            if coinServer.Transparency == 1 and coinServer.Parent then
+                -- Get the actual target position (CoinVisual if exists)
+                local targetPosition = getCoinVisualPosition(coinServer)
+                if not targetPosition then continue end
+                
+                -- Store both parts for reference
                 table.insert(newActiveCoins, {
-                    Part = coin,
-                    Position = coin.Position,
+                    ServerPart = coinServer,
+                    VisualPart = coinServer:FindFirstChild(config.VisualPartName),
+                    Position = targetPosition, -- This is CoinVisual position!
                     LastSeen = currentTime,
                     Attempts = 0,
-                    IsCollecting = false
+                    IsCollecting = false,
+                    Collectible = true
                 })
             end
         end
@@ -102,6 +132,11 @@ local function updateCoinCache()
     
     coinCache.activeCoins = newActiveCoins
     coinCache.lastUpdate = currentTime
+    
+    -- Debug output
+    if #newActiveCoins > 0 then
+        print(string.format("[Cache] Found %d active coins", #newActiveCoins))
+    end
     
     return newActiveCoins
 end
@@ -159,7 +194,7 @@ local function getClosestCoin()
     local playerPos = HumanoidRootPart.Position
     
     for _, coinData in pairs(activeCoins) do
-        if coinData.Part and coinData.Part.Parent then
+        if coinData.ServerPart and coinData.ServerPart.Parent and coinData.Collectible then
             local distance = (coinData.Position - playerPos).Magnitude
             
             -- Skip if too far or already being collected
@@ -188,31 +223,34 @@ local function createSmoothPath(destination)
         AgentRadius = 2,
         AgentHeight = 5,
         AgentCanJump = true,
-        WaypointSpacing = 4,
+        WaypointSpacing = 3, -- Reduced for more precision
         Costs = {
-            Water = 20, -- Avoid water if possible
-            Lava = math.huge -- Never go through lava
+            Water = 20,
+            Lava = math.huge
         }
     })
     
-    path:ComputeAsync(HumanoidRootPart.Position, destination)
+    local startPos = HumanoidRootPart.Position
+    path:ComputeAsync(startPos, destination)
     
     if path.Status == Enum.PathStatus.Success then
         local waypoints = path:GetWaypoints()
         
-        -- Filter waypoints for smoother movement
+        -- Filter waypoints but keep more for CoinVisual precision
         local filteredWaypoints = {}
         for i, waypoint in ipairs(waypoints) do
-            -- Skip some waypoints for more direct movement (but still follow path)
-            if i == 1 or i == #waypoints or i % 2 == 0 then
+            -- Keep more waypoints near the end for precision
+            local isNearEnd = i > #waypoints - 3
+            if i == 1 or i == #waypoints or isNearEnd or i % 2 == 0 then
                 table.insert(filteredWaypoints, waypoint)
             end
         end
         
         return filteredWaypoints
+    else
+        print("[Pathfinding] Failed to compute path:", path.Status)
+        return nil
     end
-    
-    return nil
 end
 
 local function moveToWaypoint(waypoint)
@@ -221,28 +259,32 @@ local function moveToWaypoint(waypoint)
     -- Add human-like delay
     if waypoint.Action == Enum.PathWaypointAction.Jump then
         Humanoid.Jump = true
-        task.wait(0.2) -- Small pause for jump
+        task.wait(0.2)
     end
     
     -- Wait until reached or timeout
     local startTime = tick()
+    local waypointTimeout = 3
+    
     while (HumanoidRootPart.Position - waypoint.Position).Magnitude > 4 do
         local elapsed = tick() - startTime
         
-        -- Timeout after 3 seconds per waypoint
-        if elapsed > 3 then
-            return false -- Failed to reach waypoint
+        -- Timeout check
+        if elapsed > waypointTimeout then
+            print("[Movement] Waypoint timeout")
+            return false
         end
         
-        -- Check if stuck
+        -- Stuck detection
         if config.StuckDetection then
             local movedDistance = (HumanoidRootPart.Position - stuckCheck.lastPosition).Magnitude
-            if movedDistance < 1 then
+            if movedDistance < 0.5 then
                 stuckCheck.stuckTime = stuckCheck.stuckTime + RunService.Heartbeat:Wait()
-                if stuckCheck.stuckTime > config.StuckTimeout then
-                    -- Try jumping to get unstuck
+                if stuckCheck.stuckTime > 1 then
+                    -- Jump to get unstuck
                     Humanoid.Jump = true
                     stuckCheck.stuckTime = 0
+                    print("[Movement] Jumping to unstuck")
                 end
             else
                 stuckCheck.lastPosition = HumanoidRootPart.Position
@@ -256,7 +298,7 @@ local function moveToWaypoint(waypoint)
     return true
 end
 
-local function moveToCoinSmooth(coinPosition)
+local function moveToCoinSmooth(coinPosition, coinData)
     local waypoints = createSmoothPath(coinPosition)
     if not waypoints then return false end
     
@@ -264,23 +306,30 @@ local function moveToCoinSmooth(coinPosition)
     stuckCheck.lastPosition = HumanoidRootPart.Position
     stuckCheck.stuckTime = 0
     
-    -- Follow waypoints with human-like pacing
+    -- Follow waypoints
     for i, waypoint in ipairs(waypoints) do
-        -- Skip last few meters for direct collection
-        if i == #waypoints then
-            local distanceToCoin = (HumanoidRootPart.Position - coinPosition).Magnitude
-            if distanceToCoin <= config.CoinRadius then
-                return true -- Close enough to collect
-            end
+        -- Check if coin is still valid
+        if not coinData.ServerPart or not coinData.ServerPart.Parent then
+            print("[Movement] Coin disappeared during movement")
+            return false
         end
         
+        -- Check distance to coin (using CoinVisual position)
+        local distanceToCoin = (HumanoidRootPart.Position - coinPosition).Magnitude
+        if distanceToCoin <= config.CoinRadius then
+            print("[Movement] Close enough to collect")
+            return true
+        end
+        
+        -- Move to waypoint
         if not moveToWaypoint(waypoint) then
-            return false -- Failed to reach waypoint
+            return false
         end
         
-        -- Small pause between waypoints (human-like)
+        -- Small pause between waypoints (more human-like)
         if i < #waypoints then
-            task.wait(0.05 + math.random() * 0.1) -- Random 50-150ms delay
+            local pause = 0.03 + math.random() * 0.07
+            task.wait(pause)
         end
     end
     
@@ -289,7 +338,8 @@ end
 
 -- ========== MAIN AUTOFARM LOOP ==========
 local function autofarmLoop()
-    print("[Autofarm] Starting optimized coin collection...")
+    print("[Autofarm v2] Starting CoinVisual targeting...")
+    print(string.format("Targeting: %s", config.TargetCoinVisual and "CoinVisual" or "Coin_Server"))
     
     while _G.Autofarm do
         -- Safety checks
@@ -301,28 +351,38 @@ local function autofarmLoop()
         
         -- Check if bag is full
         if isBagFull() then
-            print("[Autofarm] Bag is full! Waiting...")
-            Humanoid:MoveTo(HumanoidRootPart.Position) -- Stop moving
-            task.wait(2)
+            print("[Autofarm] Bag is full! Pausing...")
+            Humanoid:MoveTo(HumanoidRootPart.Position)
+            for i = 1, 10 do
+                if not _G.Autofarm then break end
+                if not isBagFull() then break end
+                task.wait(1)
+            end
             continue
         end
         
-        -- Find closest coin
+        -- Find closest coin (targeting CoinVisual position)
         local coinData, distance = getClosestCoin()
         
         if not coinData then
-            -- No coins found, wait and search again
-            print("[Autofarm] No coins found. Searching...")
+            print("[Autofarm] No active coins found. Waiting...")
             Humanoid:MoveTo(HumanoidRootPart.Position)
-            task.wait(1)
+            
+            -- Look around naturally while waiting
+            if math.random() < 0.3 then
+                Humanoid.Jump = true
+            end
+            
+            task.wait(1.5)
             continue
         end
         
-        -- Check if we should attempt to collect this coin
+        -- Attempt tracking
         coinData.Attempts = coinData.Attempts + 1
         if coinData.Attempts > config.MaxAttemptsPerCoin then
-            print("[Autofarm] Skipping coin after too many attempts")
+            print("[Autofarm] Skipping coin after", coinData.Attempts, "attempts")
             coinData.IsCollecting = false
+            coinData.Collectible = false
             task.wait(0.5)
             continue
         end
@@ -330,116 +390,105 @@ local function autofarmLoop()
         -- Mark as collecting
         coinData.IsCollecting = true
         
-        -- Move to coin with smooth pathfinding
-        print(string.format("[Autofarm] Moving to coin (%d meters away)", math.floor(distance)))
+        -- Move to CoinVisual position
+        print(string.format("[Autofarm] Moving to coin (%.1f meters)", distance))
+        print(string.format("  Position: %s", tostring(coinData.Position)))
         
-        local success = moveToCoinSmooth(coinData.Position)
+        local success = moveToCoinSmooth(coinData.Position, coinData)
         
         if success then
             print("[Autofarm] Reached coin area")
             
-            -- Small human-like pause before "collecting"
-            task.wait(0.2 + math.random() * 0.3)
+            -- Very brief pause (makes it look natural)
+            task.wait(0.1 + math.random() * 0.2)
             
-            -- Simulate collection by waiting (actual collection happens via proximity)
-            task.wait(config.WaitAfterCollect)
-            
-            -- Reset attempts for next time
+            -- Mark as collected
             coinData.Attempts = 0
+            coinData.Collectible = false
+            
+            -- Small celebration sometimes
+            if math.random() < 0.2 then
+                Humanoid.Jump = true
+            end
         else
             print("[Autofarm] Failed to reach coin")
         end
         
         coinData.IsCollecting = false
         
-        -- Small random delay between coins (human behavior)
-        task.wait(0.1 + math.random() * 0.3)
+        -- Natural delay between attempts
+        task.wait(0.2 + math.random() * 0.4)
     end
     
     print("[Autofarm] Stopped")
-    Humanoid:MoveTo(HumanoidRootPart.Position) -- Stop moving
+    Humanoid:MoveTo(HumanoidRootPart.Position)
 end
 
 -- ========== CONTROLS ==========
-local function toggleAutofarm()
+function toggleAutofarm()
     _G.Autofarm = not _G.Autofarm
     
     if _G.Autofarm then
-        print("[Autofarm] ENABLED")
+        print("[Autofarm v2] ENABLED - Targeting CoinVisual")
         task.spawn(autofarmLoop)
     else
-        print("[Autofarm] DISABLED")
+        print("[Autofarm v2] DISABLED")
     end
 end
 
--- ========== VISUAL DEBUG (Optional) ==========
-local function createVisualDebug()
-    if not _G.PathVisualizer then
-        _G.PathVisualizer = {}
+-- ========== DEBUG FUNCTIONS ==========
+local function debugCoinStructure()
+    print("\n=== DEBUG: Coin Structure ===")
+    local container = findCoinContainer()
+    if not container then
+        print("CoinContainer not found!")
+        return
     end
     
-    -- Clean up old visuals
-    for _, part in pairs(_G.PathVisualizer) do
-        if part then part:Destroy() end
-    end
+    print("Found CoinContainer with", #container:GetChildren(), "children")
     
-    _G.PathVisualizer = {}
-    
-    -- Optional: Create path visualization
-    local function visualizePath(waypoints)
-        for i, waypoint in ipairs(waypoints) do
-            local part = Instance.new("Part")
-            part.Size = Vector3.new(1, 1, 1)
-            part.Position = waypoint.Position
-            part.Anchored = true
-            part.CanCollide = false
-            part.Transparency = 0.7
-            part.Color = Color3.fromRGB(0, 255, 0)
-            part.Parent = Workspace
+    for i, coin in pairs(container:GetChildren()) do
+        if coin.Name == "Coin_Server" then
+            print(string.format("\nCoin_Server #%d:", i))
+            print("  Transparency:", coin.Transparency)
+            print("  Position:", tostring(coin.Position))
             
-            table.insert(_G.PathVisualizer, part)
-            
-            -- Add label for waypoint number
-            local billboard = Instance.new("BillboardGui")
-            billboard.Size = UDim2.new(0, 50, 0, 50)
-            billboard.StudsOffset = Vector3.new(0, 2, 0)
-            billboard.Adornee = part
-            
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(1, 0, 1, 0)
-            label.Text = tostring(i)
-            label.TextColor3 = Color3.new(1, 1, 1)
-            label.BackgroundTransparency = 1
-            label.Parent = billboard
-            
-            billboard.Parent = part
+            local visual = coin:FindFirstChild("CoinVisual")
+            if visual then
+                print("  Has CoinVisual: YES")
+                print("  Visual Position:", tostring(visual.Position))
+                print("  Visual Transparency:", visual.Transparency)
+            else
+                print("  Has CoinVisual: NO")
+            end
         end
     end
+    print("=== END DEBUG ===\n")
 end
 
 -- ========== STARTUP ==========
--- Character reconnection handling
+-- Character reconnection
 LocalPlayer.CharacterAdded:Connect(function(char)
     Character = char
-    Humanoid = char:WaitForChild("Humanoid")
-    HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
+    task.wait(0.5)
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
     
-    -- Reapply settings
     Humanoid.WalkSpeed = config.WalkSpeed
     Humanoid.JumpPower = config.JumpPower
 end)
 
--- Start autofarm if enabled
+-- Auto-start if enabled
 if _G.Autofarm then
+    task.wait(1)
     task.spawn(autofarmLoop)
 end
 
--- ============================================
--- USAGE:
--- 1. Set _G.Autofarm = true to start
--- 2. Use toggleAutofarm() to toggle on/off
--- ============================================
+print("[Autofarm v2] System loaded!")
+print("Commands: toggleAutofarm(), debugCoinStructure()")
+print("Config: TargetCoinVisual =", config.TargetCoinVisual)
+print("Current status: Autofarm =", _G.Autofarm or false)
 
-print("[Coin Autofarm] System loaded successfully!")
-print("Set _G.Autofarm = true to begin")
-print("Current status:", _G.Autofarm)
+-- Run debug to verify structure
+task.wait(2)
+debugCoinStructure()
