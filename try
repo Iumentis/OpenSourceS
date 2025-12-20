@@ -1,296 +1,210 @@
--- Performance Monitor & Exploit Sniffer
--- Run this IN YOUR EXPLOIT before executing the hub script
+-- Performance Monitor for Eclipse Hub Detection
+-- Run this FIRST, then run your Eclipse Hub
 
 local Stats = game:GetService("Stats")
 local NetworkClient = game:GetService("NetworkClient")
 local RunService = game:GetService("RunService")
 
 -- Configuration
-local MONITOR_DURATION = 10  -- How long to monitor (seconds)
-local PING_THRESHOLD = 200   -- Ping spike threshold (ms)
-local FPS_THRESHOLD = 15     -- Minimum FPS to trigger alert
-local MEMORY_SPIKE_MB = 50   -- Memory spike threshold (MB)
+local MONITOR_TIME = 10  -- Monitor for 10 seconds
+local THRESHOLD_PING = 200  -- Alert if ping > 200ms
+local THRESHOLD_FPS = 15    -- Alert if FPS < 15
 
 -- Tracking variables
-local baselinePing = 0
-local baselineMemory = 0
+local startTime = os.clock()
+local logs = {}
 local maxPing = 0
-local maxMemory = 0
 local minFPS = 60
-local performanceLogs = {}
-local hookedFunctions = {}
+local alertCount = 0
 
--- 1. PERFORMANCE MONITORING FUNCTIONS
-local function getCurrentPing()
-    return NetworkClient:GetServerResponseTime() * 1000  -- Convert to ms
+-- Get current ping in milliseconds
+local function getPing()
+    return NetworkClient:GetServerResponseTime() * 1000
 end
 
-local function getCurrentMemory()
+-- Get current FPS
+local function getFPS()
+    local fps = 0
+    local success = pcall(function()
+        fps = 1 / RunService.RenderStepped:Wait()
+    end)
+    return math.floor(fps)
+end
+
+-- Get current memory usage
+local function getMemory()
     return Stats:GetTotalMemoryUsageMb()
 end
 
-local function getCurrentFPS()
-    return 1 / RunService.RenderStepped:Wait()
-end
-
--- 2. FUNCTION HOOK TRACKING (see what the exploit uses)
-local function setupFunctionTracker()
-    local sensitiveFunctions = {
-        hookfunction = hookfunction,
-        hookmetamethod = hookmetamethod,
-        getgenv = getgenv,
-        getrenv = getrenv,
-        getrawmetatable = getrawmetatable,
-        setreadonly = setreadonly,
-        debug_getupvalues = debug.getupvalues,
-        debug_getconstants = debug.getconstants
-    }
+-- Simple monitoring function
+local function monitorPerformance()
+    print("=== Starting Performance Monitor ===")
+    print("Will monitor for " .. MONITOR_TIME .. " seconds")
+    print("Waiting 2 seconds for baseline...")
     
-    for funcName, func in pairs(sensitiveFunctions) do
-        if func then
-            local original = func
-            hookedFunctions[funcName] = original
-            
-            -- Replace with tracking wrapper
-            local function tracker(...)
-                local callTime = os.clock()
-                local result = original(...)
-                
-                table.insert(performanceLogs, {
-                    time = callTime,
-                    type = "FUNCTION_CALL",
-                    function = funcName,
-                    args = {...},
-                    ping = getCurrentPing(),
-                    memory = getCurrentMemory()
-                })
-                
-                print(string.format("[TRACKER] %s() called at %.2fs", funcName, callTime))
-                return result
-            end
-            
-            -- Apply hook if we're in exploiter context
-            if funcName == "hookfunction" then
-                hookfunction = tracker
-            elseif funcName == "getgenv" then
-                getgenv = tracker
-            end
-            -- Add more as needed...
-        end
-    end
-end
-
--- 3. MAIN MONITORING LOOP
-local function startPerformanceMonitor()
-    print("=== PERFORMANCE MONITOR STARTED ===")
-    print("Monitoring for", MONITOR_DURATION, "seconds...")
+    -- Get baseline (first 2 seconds)
+    local baselinePing = 0
+    local baselineMemory = 0
+    local baselineFPS = 0
+    local baselineSamples = 0
     
-    -- Establish baseline (first 2 seconds)
-    local baselines = {}
-    for i = 1, 40 do  -- 2 seconds of samples
-        table.insert(baselines, {
-            ping = getCurrentPing(),
-            memory = getCurrentMemory(),
-            fps = getCurrentFPS()
-        })
+    for i = 1, 40 do
+        baselinePing = baselinePing + getPing()
+        baselineMemory = baselineMemory + getMemory()
+        baselineFPS = baselineFPS + getFPS()
+        baselineSamples = baselineSamples + 1
         task.wait(0.05)
     end
     
-    -- Calculate averages
-    local totalPing, totalMemory, totalFPS = 0, 0, 0
-    for _, sample in ipairs(baselines) do
-        totalPing = totalPing + sample.ping
-        totalMemory = totalMemory + sample.memory
-        totalFPS = totalFPS + sample.fps
-    end
+    baselinePing = baselinePing / baselineSamples
+    baselineMemory = baselineMemory / baselineSamples
+    baselineFPS = baselineFPS / baselineSamples
     
-    baselinePing = totalPing / #baselines
-    baselineMemory = totalMemory / #baselines
-    local baselineFPS = totalFPS / #baselines
-    
-    print(string.format("Baselines established: Ping=%.1fms, Memory=%.1fMB, FPS=%.1f", 
+    print(string.format("Baseline: Ping=%.1fms, Memory=%.1fMB, FPS=%.1f", 
         baselinePing, baselineMemory, baselineFPS))
     
-    -- Start tracking
-    local startTime = os.clock()
-    local alertTriggered = false
+    print("\n=== NOW RUN YOUR ECLIPSE HUB SCRIPT ===")
+    print("Monitoring will continue for " .. MONITOR_TIME .. " seconds...\n")
     
-    while os.clock() - startTime < MONITOR_DURATION do
-        local currentTime = os.clock() - startTime
-        local ping = getCurrentPing()
-        local memory = getCurrentMemory()
-        local fps = getCurrentFPS()
+    -- Main monitoring loop
+    local monitorStart = os.clock()
+    while os.clock() - monitorStart < MONITOR_TIME do
+        local currentTime = os.clock() - monitorStart
+        local ping = getPing()
+        local memory = getMemory()
+        local fps = getFPS()
         
         -- Track extremes
         if ping > maxPing then maxPing = ping end
-        if memory > maxMemory then maxMemory = memory end
-        if fps < minFPS then minFPS = fps end
+        if fps < minFPS and fps > 0 then minFPS = fps end
         
-        -- Detect anomalies
-        local anomalies = {}
+        -- Check for issues
+        local hasIssue = false
+        local issues = {}
         
-        if ping > baselinePing + PING_THRESHOLD then
-            table.insert(anomalies, string.format("PING SPIKE: %.1fms (+%.1f)", ping, ping - baselinePing))
+        if ping > baselinePing + THRESHOLD_PING then
+            table.insert(issues, "High ping: " .. math.floor(ping) .. "ms")
+            hasIssue = true
         end
         
-        if memory > baselineMemory + MEMORY_SPIKE_MB then
-            table.insert(anomalies, string.format("MEMORY SPIKE: %.1fMB (+%.1f)", memory, memory - baselineMemory))
+        if fps < THRESHOLD_FPS and fps > 0 then
+            table.insert(issues, "Low FPS: " .. fps)
+            hasIssue = true
         end
         
-        if fps < FPS_THRESHOLD then
-            table.insert(anomalies, string.format("FPS DROP: %.1f (baseline %.1f)", fps, baselineFPS))
-        end
-        
-        -- Log performance sample
-        local sample = {
+        -- Log this sample
+        local logEntry = {
             time = currentTime,
             ping = ping,
             memory = memory,
             fps = fps,
-            anomalies = #anomalies > 0 and anomalies or nil
+            hasIssue = hasIssue,
+            issues = #issues > 0 and issues or nil
         }
         
-        table.insert(performanceLogs, sample)
+        table.insert(logs, logEntry)
         
-        -- Alert if anomalies detected
-        if #anomalies > 0 and not alertTriggered then
-            alertTriggered = true
-            print("\n⚠️  PERFORMANCE ANOMALIES DETECTED ⚠️")
-            for _, anomaly in ipairs(anomalies) do
-                print("   " .. anomaly)
-            end
-            print("   Time:", string.format("%.2fs", currentTime))
+        -- Show alert if issues found
+        if hasIssue then
+            alertCount = alertCount + 1
+            print(string.format("[ALERT %d] t=%.1fs: %s", 
+                alertCount, currentTime, table.concat(issues, ", ")))
         end
         
-        task.wait(0.1)  -- Sample every 100ms
+        -- Show progress every 2 seconds
+        if math.floor(currentTime) % 2 == 0 and math.floor(currentTime) ~= math.floor(currentTime - 0.1) then
+            print(string.format("[%.1f/%.1fs] Ping: %dms, FPS: %d", 
+                currentTime, MONITOR_TIME, math.floor(ping), fps))
+        end
+        
+        task.wait(0.1)  -- Check every 100ms
     end
     
-    -- 4. GENERATE FINAL REPORT
+    -- Generate final report
     print("\n" .. string.rep("=", 50))
-    print("FINAL PERFORMANCE REPORT")
+    print("FINAL REPORT")
     print(string.rep("=", 50))
     
-    print(string.format("Monitoring Duration: %.1f seconds", MONITOR_DURATION))
-    print(string.format("Baseline Ping: %.1fms", baselinePing))
-    print(string.format("Maximum Ping: %.1fms (Δ%.1fms)", maxPing, maxPing - baselinePing))
-    print(string.format("Baseline Memory: %.1fMB", baselineMemory))
-    print(string.format("Maximum Memory: %.1fMB (Δ%.1fMB)", maxMemory, maxMemory - baselineMemory))
-    print(string.format("Minimum FPS: %.1f", minFPS))
+    print("Monitoring duration: " .. MONITOR_TIME .. " seconds")
+    print("Baseline ping: " .. string.format("%.1fms", baselinePing))
+    print("Maximum ping: " .. math.floor(maxPing) .. "ms")
+    print("Minimum FPS: " .. minFPS)
+    print("Total alerts: " .. alertCount)
     
-    -- Find the worst performance period
-    local worstTime = 0
-    local worstSeverity = 0
+    -- Find the worst period
+    local worstStart = 0
+    local worstEnd = 0
+    local worstAlertCount = 0
+    local currentAlertCount = 0
+    local currentStart = 0
     
-    for _, log in ipairs(performanceLogs) do
-        if log.anomalies then
-            local severity = 0
-            if log.ping > baselinePing + PING_THRESHOLD then severity = severity + 1 end
-            if log.memory > baselineMemory + MEMORY_SPIKE_MB then severity = severity + 1 end
-            if log.fps < FPS_THRESHOLD then severity = severity + 1 end
-            
-            if severity > worstSeverity then
-                worstSeverity = severity
-                worstTime = log.time
+    for i, log in ipairs(logs) do
+        if log.hasIssue then
+            if currentAlertCount == 0 then
+                currentStart = log.time
             end
-        end
-    end
-    
-    if worstSeverity > 0 then
-        print(string.format("\n⚠️  WORST PERFORMANCE AT: %.2f seconds", worstTime))
-        print("   (This is likely when the exploit was loading)")
-    end
-    
-    -- Show function calls if tracking was set up
-    local functionCalls = 0
-    for _, log in ipairs(performanceLogs) do
-        if log.type == "FUNCTION_CALL" then
-            functionCalls = functionCalls + 1
-        end
-    end
-    
-    if functionCalls > 0 then
-        print(string.format("\n🔍 DETECTED %d SUSPICIOUS FUNCTION CALLS", functionCalls))
-        for _, log in ipairs(performanceLogs) do
-            if log.type == "FUNCTION_CALL" then
-                print(string.format("   [%.2fs] %s()", log.time, log.function))
+            currentAlertCount = currentAlertCount + 1
+        else
+            if currentAlertCount > worstAlertCount then
+                worstAlertCount = currentAlertCount
+                worstStart = currentStart
+                worstEnd = log.time
             end
+            currentAlertCount = 0
         end
     end
     
-    print("\n" .. string.rep("=", 50))
-    
-    -- 5. SAVE DATA FOR ANALYSIS (optional)
-    local function exportData()
-        local export = "Time,Ping,Memory,FPS,Anomalies\n"
-        for _, log in ipairs(performanceLogs) do
-            export = export .. string.format("%.2f,%.1f,%.1f,%.1f,%s\n",
-                log.time, log.ping or 0, log.memory or 0, log.fps or 0,
-                log.anomalies and table.concat(log.anomalies, "; ") or ""
-            )
+    if worstAlertCount > 0 then
+        local duration = worstEnd - worstStart
+        print("\n⚠️  WORST PERFORMANCE PERIOD:")
+        print("   Start: " .. string.format("%.1fs", worstStart))
+        print("   End: " .. string.format("%.1fs", worstEnd))
+        print("   Duration: " .. string.format("%.1f seconds", duration))
+        print("   Alerts during period: " .. worstAlertCount)
+        
+        if duration > 3 then
+            print("\n🎯 THIS IS LIKELY THE EXPLOIT LOADING!")
+            print("   The freeze matches your screenshot (4-5 seconds)")
         end
-        return export
     end
     
-    -- Save to file if writefile is available
-    if writefile then
-        writefile("performance_log.csv", exportData())
-        print("📊 Data saved to 'performance_log.csv'")
+    -- Summary
+    print("\n" .. string.rep("-", 50))
+    if alertCount > 10 then
+        print("✅ STRONG EXPLOIT SIGNATURE DETECTED!")
+        print("   Multiple performance alerts found")
+    elseif alertCount > 0 then
+        print("⚠️  SOME PERFORMANCE ISSUES DETECTED")
+        print("   May indicate exploit activity")
+    else
+        print("📊 NO SIGNIFICANT PERFORMANCE ISSUES")
+        print("   Either exploit didn't load or is very efficient")
     end
     
-    return performanceLogs
+    print("\nTo use this for anti-cheat:")
+    print("1. Freeze duration: " .. (worstEnd - worstStart > 0 and string.format("%.1f seconds", worstEnd - worstStart) or "Not detected"))
+    print("2. Ping threshold: " .. THRESHOLD_PING .. "ms above baseline")
+    print("3. FPS threshold: " .. THRESHOLD_FPS .. " FPS minimum")
+    
+    return logs
 end
 
--- 6. EXECUTION INSTRUCTIONS
-print([[
-=== ECLIPSE HUB PERFORMANCE SNIFFER ===
+-- Start monitoring
+local success, result = pcall(monitorPerformance)
 
-INSTRUCTIONS:
-1. Run this script FIRST in your executor
-2. Wait for "PERFORMANCE MONITOR STARTED" message
-3. THEN run your Eclipse Hub script
-4. Monitor will run for 10 seconds and generate a report
-
-The script will:
-• Track ping, memory, and FPS
-• Detect performance spikes (like the 4.6s freeze)
-• Log suspicious function calls
-• Generate a detailed report
-
-Press any key to begin...
-]])
-
--- Wait for user input
-task.wait(2)
-
--- Setup tracking and start monitor
-pcall(setupFunctionTracker)
-local logs = startPerformanceMonitor()
-
--- Optional: Auto-analyze for exploit patterns
-local function analyzeForExploitPatterns()
-    local freezeDetected = false
-    local freezeStart = 0
+if not success then
+    print("Error running monitor: " .. tostring(result))
+    print("Trying simplified version...")
     
-    for i = 2, #logs do
-        local prev = logs[i-1]
-        local curr = logs[i]
-        
-        -- Detect sudden FPS drop followed by recovery (freeze pattern)
-        if curr.fps and prev.fps and curr.fps < 5 and prev.fps > 20 then
-            freezeStart = curr.time
-        end
-        
-        if freezeStart > 0 and curr.fps > 20 and curr.time - freezeStart > 3 then
-            freezeDetected = true
-            print(string.format("\n🎯 DETECTED EXPLOIT LOADING FREEZE: %.2f second freeze at %.2fs", 
-                curr.time - freezeStart, freezeStart))
-            break
+    -- Fallback simple version
+    print("Simple monitor - checking for freezes...")
+    local checkpoints = {}
+    for i = 1, 50 do
+        table.insert(checkpoints, os.clock())
+        task.wait(0.1)
+        local elapsed = os.clock() - checkpoints[#checkpoints]
+        if elapsed > 0.2 then  -- If wait took too long
+            print(string.format("FREEZE DETECTED! Frame %d took %.2f seconds", i, elapsed))
         end
     end
-    
-    return freezeDetected
-end
-
-if analyzeForExploitPatterns() then
-    print("✅ Exploit loading signature detected!")
 end
