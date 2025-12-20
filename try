@@ -1,364 +1,296 @@
--- BYTECODE PATTERN DECODER - Attempts to decode common patterns
-local BytecodeDecoder = {}
-BytecodeDecoder.__index = BytecodeDecoder
+-- Performance Monitor & Exploit Sniffer
+-- Run this IN YOUR EXPLOIT before executing the hub script
 
-function BytecodeDecoder.new()
-    local self = setmetatable({}, BytecodeDecoder)
-    
-    -- Common Luau instruction patterns (REVERSE-ENGINEERED, may be wrong!)
-    self.opcodePatterns = {
-        -- Format: {hex_pattern, possible_meaning}
-        ["1B4C7561"] = {"Luau signature", "SCRIPT_HEADER"},
-        ["00..02..04"] = {"Function header", "FUNC_START"},
-        ["2A......"] = {"LOADK - Load constant", "local x = K"},
-        ["36......"] = {"GETGLOBAL - Get global", "game"},
-        ["3C......"] = {"SETGLOBAL - Set global", "x = value"},
-        ["42......"] = {"GETTABLE - Table access", "x.y or x[y]"},
-        ["48......"] = {"SETTABLE - Table write", "x.y = z"},
-        ["4E......"] = {"NEWTABLE - Create table", "{}"},
-        ["54......"] = {"SELF - Method call prep", "x:method()"},
-        ["5A......"] = {"ADD - Addition", "a + b"},
-        ["60......"] = {"SUB - Subtraction", "a - b"},
-        ["66......"] = {"MUL - Multiplication", "a * b"},
-        ["6C......"] = {"DIV - Division", "a / b"},
-        ["72......"] = {"CONCAT - String concat", "a .. b"},
-        ["78......"] = {"CALL - Function call", "func()"},
-        ["7E......"] = {"RETURN - Return", "return x"},
-        ["84......"] = {"JUMP - Unconditional jump", "goto"},
-        ["8A......"] = {"EQ - Equal compare", "a == b"},
-        ["90......"] = {"LT - Less than", "a < b"},
-        ["96......"] = {"LE - Less or equal", "a <= b"},
-        ["9C......"] = {"TEST - Boolean test", "if x then"},
-        ["A2......"] = {"TESTSET - Test and set", "x = y or z"},
-        ["A8......"] = {"FORLOOP - For loop", "for i = 1,10"},
-        ["AE......"] = {"TFORLOOP - Generic for", "for k,v in pairs"},
-        ["B4......"] = {"CLOSURE - Create function", "function() end"},
-    }
-    
-    -- Common constant patterns
-    self.constantPatterns = {
-        ["00"] = "nil",
-        ["01"] = "false", 
-        ["02"] = "true",
-        ["03......"] = "number",  -- Followed by float bytes
-        ["04......"] = "string",  -- Followed by length + chars
-    }
-    
-    return self
+local Stats = game:GetService("Stats")
+local NetworkClient = game:GetService("NetworkClient")
+local RunService = game:GetService("RunService")
+
+-- Configuration
+local MONITOR_DURATION = 10  -- How long to monitor (seconds)
+local PING_THRESHOLD = 200   -- Ping spike threshold (ms)
+local FPS_THRESHOLD = 15     -- Minimum FPS to trigger alert
+local MEMORY_SPIKE_MB = 50   -- Memory spike threshold (MB)
+
+-- Tracking variables
+local baselinePing = 0
+local baselineMemory = 0
+local maxPing = 0
+local maxMemory = 0
+local minFPS = 60
+local performanceLogs = {}
+local hookedFunctions = {}
+
+-- 1. PERFORMANCE MONITORING FUNCTIONS
+local function getCurrentPing()
+    return NetworkClient:GetServerResponseTime() * 1000  -- Convert to ms
 end
 
--- Attempt to decode bytecode hex
-function BytecodeDecoder:decodeBytecode(hex)
-    if not hex or #hex < 10 then
-        return {"-- Bytecode too short"}
-    end
+local function getCurrentMemory()
+    return Stats:GetTotalMemoryUsageMb()
+end
+
+local function getCurrentFPS()
+    return 1 / RunService.RenderStepped:Wait()
+end
+
+-- 2. FUNCTION HOOK TRACKING (see what the exploit uses)
+local function setupFunctionTracker()
+    local sensitiveFunctions = {
+        hookfunction = hookfunction,
+        hookmetamethod = hookmetamethod,
+        getgenv = getgenv,
+        getrenv = getrenv,
+        getrawmetatable = getrawmetatable,
+        setreadonly = setreadonly,
+        debug_getupvalues = debug.getupvalues,
+        debug_getconstants = debug.getconstants
+    }
     
-    local output = {}
-    table.insert(output, "🔐 ATTEMPTING BYTECODE DECODING")
-    table.insert(output, "Length: " .. #hex .. " hex chars (" .. math.floor(#hex/2) .. " bytes)")
-    table.insert(output, "")
-    
-    -- Check for Luau header
-    local header = hex:sub(1, 8)
-    if header == "1B4C7561" then
-        table.insert(output, "✅ Luau bytecode signature found")
-    else
-        table.insert(output, "⚠️  Unknown header: " .. header)
-    end
-    table.insert(output, "")
-    
-    -- Try to identify patterns
-    table.insert(output, "🔍 PATTERN ANALYSIS:")
-    
-    local patternsFound = {}
-    
-    -- Scan for known opcode patterns
-    for pattern, info in pairs(self.opcodePatterns) do
-        local pos = 1
-        while pos do
-            pos = hex:find(pattern, pos)
-            if pos then
-                local context = hex:sub(math.max(1, pos-16), math.min(#hex, pos+32))
-                table.insert(patternsFound, {
-                    position = pos,
-                    pattern = pattern,
-                    meaning = info[2],
-                    context = context
-                })
-                pos = pos + 1
-            end
-        end
-    end
-    
-    -- Sort by position
-    table.sort(patternsFound, function(a, b)
-        return a.position < b.position
-    end)
-    
-    -- Show top patterns
-    for i = 1, math.min(15, #patternsFound) do
-        local p = patternsFound[i]
-        table.insert(output, string.format("  [0x%06X] %-20s → %s", 
-            p.position, p.pattern, p.meaning))
-        
-        -- Show context for interesting patterns
-        if p.meaning:find("LOAD") or p.meaning:find("CALL") or p.meaning:find("JUMP") then
-            table.insert(output, string.format("        Context: %s", p.context))
-        end
-    end
-    
-    if #patternsFound == 0 then
-        table.insert(output, "  No known patterns found")
-    end
-    table.insert(output, "")
-    
-    -- Extract string constants more aggressively
-    table.insert(output, "🔤 STRING EXTRACTION ATTEMPT:")
-    
-    local stringsFound = {}
-    
-    -- Method 1: Look for string length patterns (04 followed by length in hex)
-    for i = 1, #hex - 6, 2 do
-        if hex:sub(i, i+1) == "04" then  -- String marker
-            -- Next 4 bytes might be length (little-endian)
-            local lenHex = hex:sub(i+2, i+9)
-            local length = tonumber(lenHex:sub(7,8) .. lenHex:sub(5,6) .. lenHex:sub(3,4) .. lenHex:sub(1,2), 16)
+    for funcName, func in pairs(sensitiveFunctions) do
+        if func then
+            local original = func
+            hookedFunctions[funcName] = original
             
-            if length and length > 0 and length < 100 then
-                -- Try to extract the string
-                local strStart = i + 10
-                local strEnd = strStart + (length * 2) - 1
+            -- Replace with tracking wrapper
+            local function tracker(...)
+                local callTime = os.clock()
+                local result = original(...)
                 
-                if strEnd <= #hex then
-                    local strHex = hex:sub(strStart, strEnd)
-                    local str = self:hexToString(strHex)
-                    
-                    if #str == length then  -- Valid extraction
-                        table.insert(stringsFound, {
-                            position = i,
-                            length = length,
-                            value = str
-                        })
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Method 2: Look for ASCII sequences directly
-    local asciiStrings = self:extractASCIIStrings(hex)
-    for _, str in ipairs(asciiStrings) do
-        if #str.value >= 3 then
-            table.insert(stringsFound, str)
-        end
-    end
-    
-    -- Remove duplicates
-    local uniqueStrings = {}
-    for _, str in ipairs(stringsFound) do
-        uniqueStrings[str.value] = str
-    end
-    
-    -- Display found strings
-    local sortedStrings = {}
-    for _, str in pairs(uniqueStrings) do
-        table.insert(sortedStrings, str)
-    end
-    
-    table.sort(sortedStrings, function(a, b)
-        return #a.value > #b.value  -- Longest first
-    end)
-    
-    for i = 1, math.min(20, #sortedStrings) do
-        local str = sortedStrings[i]
-        table.insert(output, string.format("  [0x%06X] %-3d chars: \"%s\"", 
-            str.position, #str.value, str.value))
-    end
-    
-    if #sortedStrings == 0 then
-        table.insert(output, "  No strings extracted")
-    end
-    table.insert(output, "")
-    
-    -- Attempt to reconstruct some code structure
-    table.insert(output, "🏗️  CODE STRUCTURE GUESS:")
-    
-    local guesses = {}
-    
-    -- Look for function call patterns
-    if hex:find("78......") then  -- CALL opcode
-        -- Check what comes before the call (might be what's being called)
-        for pos in hex:gmatch("()78......") do
-            local before = hex:sub(math.max(1, pos-20), pos-1)
-            
-            -- Try to find a string before the call
-            for _, str in ipairs(sortedStrings) do
-                if str.position < pos and pos - str.position < 50 then
-                    table.insert(guesses, "CALL: " .. str.value .. "()")
-                    break
-                end
-            end
-        end
-    end
-    
-    -- Look for table access
-    if hex:find("42......") then  -- GETTABLE
-        table.insert(guesses, "Table access: x.y or x[y]")
-    end
-    
-    -- Look for loops
-    if hex:find("A8......") then  -- FORLOOP
-        table.insert(guesses, "For loop: for i = ...")
-    end
-    
-    -- Look for comparisons
-    if hex:find("8A......") or hex:find("90......") or hex:find("96......") then
-        table.insert(guesses, "Comparison: a == b or a < b")
-    end
-    
-    -- Display guesses
-    if #guesses > 0 then
-        for i, guess in ipairs(guesses) do
-            table.insert(output, "  • " .. guess)
-        end
-    else
-        table.insert(output, "  Could not guess code structure")
-    end
-    
-    return output
-end
-
--- Convert hex to ASCII string
-function BytecodeDecoder:hexToString(hex)
-    local str = ""
-    for i = 1, #hex, 2 do
-        local byteHex = hex:sub(i, i+1)
-        local byte = tonumber(byteHex, 16)
-        if byte and byte >= 32 and byte <= 126 then
-            str = str .. string.char(byte)
-        else
-            return str  -- Stop at first non-ASCII
-        end
-    end
-    return str
-end
-
--- Extract ASCII strings from hex
-function BytecodeDecoder:extractASCIIStrings(hex)
-    local strings = {}
-    local i = 1
-    
-    while i <= #hex do
-        -- Look for start of ASCII sequence
-        if tonumber(hex:sub(i, i+1), 16) and tonumber(hex:sub(i, i+1), 16) >= 65 then  -- A or higher
-            local start = i
-            local strHex = ""
-            local valid = true
-            
-            -- Collect consecutive ASCII characters
-            while valid and i <= #hex - 1 do
-                local byte = tonumber(hex:sub(i, i+1), 16)
-                if byte and byte >= 32 and byte <= 126 then
-                    strHex = strHex .. hex:sub(i, i+1)
-                    i = i + 2
-                else
-                    valid = false
-                end
+                table.insert(performanceLogs, {
+                    time = callTime,
+                    type = "FUNCTION_CALL",
+                    function = funcName,
+                    args = {...},
+                    ping = getCurrentPing(),
+                    memory = getCurrentMemory()
+                })
+                
+                print(string.format("[TRACKER] %s() called at %.2fs", funcName, callTime))
+                return result
             end
             
-            if #strHex >= 6 then  -- At least 3 characters
-                local str = self:hexToString(strHex)
-                if #str >= 3 then
-                    table.insert(strings, {
-                        position = start,
-                        value = str
-                    })
-                end
+            -- Apply hook if we're in exploiter context
+            if funcName == "hookfunction" then
+                hookfunction = tracker
+            elseif funcName == "getgenv" then
+                getgenv = tracker
             end
-        else
-            i = i + 2
+            -- Add more as needed...
         end
     end
-    
-    return strings
 end
 
--- Analyze a specific script with decoding
-function BytecodeDecoder:analyzeWithDecoding(script)
-    local output = {}
+-- 3. MAIN MONITORING LOOP
+local function startPerformanceMonitor()
+    print("=== PERFORMANCE MONITOR STARTED ===")
+    print("Monitoring for", MONITOR_DURATION, "seconds...")
     
-    table.insert(output, "=" .. string.rep("=", 60))
-    table.insert(output, "🔐 BYTECODE DECODING ATTEMPT")
-    table.insert(output, "Script: " .. script:GetFullName())
-    table.insert(output, "=" .. string.rep("=", 60))
-    table.insert(output, "")
-    
-    -- Get bytecode
-    local bytecodeSuccess, bytecode = pcall(getscriptbytecode, script)
-    if not bytecodeSuccess or not bytecode then
-        table.insert(output, "❌ Could not get bytecode")
-        return table.concat(output, "\n")
+    -- Establish baseline (first 2 seconds)
+    local baselines = {}
+    for i = 1, 40 do  -- 2 seconds of samples
+        table.insert(baselines, {
+            ping = getCurrentPing(),
+            memory = getCurrentMemory(),
+            fps = getCurrentFPS()
+        })
+        task.wait(0.05)
     end
     
-    -- Try to decode
-    local decoded = self:decodeBytecode(bytecode)
-    for _, line in ipairs(decoded) do
-        table.insert(output, line)
+    -- Calculate averages
+    local totalPing, totalMemory, totalFPS = 0, 0, 0
+    for _, sample in ipairs(baselines) do
+        totalPing = totalPing + sample.ping
+        totalMemory = totalMemory + sample.memory
+        totalFPS = totalFPS + sample.fps
     end
     
-    table.insert(output, "")
-    table.insert(output, "=" .. string.rep("=", 60))
+    baselinePing = totalPing / #baselines
+    baselineMemory = totalMemory / #baselines
+    local baselineFPS = totalFPS / #baselines
     
-    return table.concat(output, "\n")
-end
-
--- ========== MAIN: DECODE WEAPON SERVICE ==========
-print("🔐 ATTEMPTING BYTECODE DECODING")
-print("This will try to decode hex bytecode into Lua-like structures")
-print("")
-
-local decoder = BytecodeDecoder.new()
-
--- Try to decode the WeaponService module
-local target = game:GetService("ReplicatedStorage"):FindFirstChild("ClientServices")
-if target then
-    local weaponService = target:FindFirstChild("WeaponService")
-    if weaponService and weaponService:IsA("ModuleScript") then
-        print("🎯 TARGET: WeaponService ModuleScript")
-        local result = decoder:analyzeWithDecoding(weaponService)
+    print(string.format("Baselines established: Ping=%.1fms, Memory=%.1fMB, FPS=%.1f", 
+        baselinePing, baselineMemory, baselineFPS))
+    
+    -- Start tracking
+    local startTime = os.clock()
+    local alertTriggered = false
+    
+    while os.clock() - startTime < MONITOR_DURATION do
+        local currentTime = os.clock() - startTime
+        local ping = getCurrentPing()
+        local memory = getCurrentMemory()
+        local fps = getCurrentFPS()
         
-        -- Save to file
-        local fileName = "bytecode_decode_" .. os.time() .. ".txt"
+        -- Track extremes
+        if ping > maxPing then maxPing = ping end
+        if memory > maxMemory then maxMemory = memory end
+        if fps < minFPS then minFPS = fps end
         
-        if type(writefile) == "function" then
-            pcall(writefile, fileName, result)
-            print("✅ Saved to: " .. fileName)
-            
-            -- Show preview
-            print("\n📄 DECODING PREVIEW:")
-            print(string.rep("-", 50))
-            
-            local lines = {}
-            for line in result:gmatch("[^\r\n]+") do
-                table.insert(lines, line)
-                if #lines >= 25 then break end
-            end
-            print(table.concat(lines, "\n"))
-            if #lines >= 25 then print("... (full in file)") end
-            
-        else
-            print("\n📄 OUTPUT:")
-            print(string.rep("-", 50))
-            print(result:sub(1, 1000))
-            if #result > 1000 then print("...") end
+        -- Detect anomalies
+        local anomalies = {}
+        
+        if ping > baselinePing + PING_THRESHOLD then
+            table.insert(anomalies, string.format("PING SPIKE: %.1fms (+%.1f)", ping, ping - baselinePing))
         end
-    else
-        print("❌ WeaponService not found")
+        
+        if memory > baselineMemory + MEMORY_SPIKE_MB then
+            table.insert(anomalies, string.format("MEMORY SPIKE: %.1fMB (+%.1f)", memory, memory - baselineMemory))
+        end
+        
+        if fps < FPS_THRESHOLD then
+            table.insert(anomalies, string.format("FPS DROP: %.1f (baseline %.1f)", fps, baselineFPS))
+        end
+        
+        -- Log performance sample
+        local sample = {
+            time = currentTime,
+            ping = ping,
+            memory = memory,
+            fps = fps,
+            anomalies = #anomalies > 0 and anomalies or nil
+        }
+        
+        table.insert(performanceLogs, sample)
+        
+        -- Alert if anomalies detected
+        if #anomalies > 0 and not alertTriggered then
+            alertTriggered = true
+            print("\n⚠️  PERFORMANCE ANOMALIES DETECTED ⚠️")
+            for _, anomaly in ipairs(anomalies) do
+                print("   " .. anomaly)
+            end
+            print("   Time:", string.format("%.2fs", currentTime))
+        end
+        
+        task.wait(0.1)  -- Sample every 100ms
     end
-else
-    print("❌ ClientServices not found")
+    
+    -- 4. GENERATE FINAL REPORT
+    print("\n" .. string.rep("=", 50))
+    print("FINAL PERFORMANCE REPORT")
+    print(string.rep("=", 50))
+    
+    print(string.format("Monitoring Duration: %.1f seconds", MONITOR_DURATION))
+    print(string.format("Baseline Ping: %.1fms", baselinePing))
+    print(string.format("Maximum Ping: %.1fms (Δ%.1fms)", maxPing, maxPing - baselinePing))
+    print(string.format("Baseline Memory: %.1fMB", baselineMemory))
+    print(string.format("Maximum Memory: %.1fMB (Δ%.1fMB)", maxMemory, maxMemory - baselineMemory))
+    print(string.format("Minimum FPS: %.1f", minFPS))
+    
+    -- Find the worst performance period
+    local worstTime = 0
+    local worstSeverity = 0
+    
+    for _, log in ipairs(performanceLogs) do
+        if log.anomalies then
+            local severity = 0
+            if log.ping > baselinePing + PING_THRESHOLD then severity = severity + 1 end
+            if log.memory > baselineMemory + MEMORY_SPIKE_MB then severity = severity + 1 end
+            if log.fps < FPS_THRESHOLD then severity = severity + 1 end
+            
+            if severity > worstSeverity then
+                worstSeverity = severity
+                worstTime = log.time
+            end
+        end
+    end
+    
+    if worstSeverity > 0 then
+        print(string.format("\n⚠️  WORST PERFORMANCE AT: %.2f seconds", worstTime))
+        print("   (This is likely when the exploit was loading)")
+    end
+    
+    -- Show function calls if tracking was set up
+    local functionCalls = 0
+    for _, log in ipairs(performanceLogs) do
+        if log.type == "FUNCTION_CALL" then
+            functionCalls = functionCalls + 1
+        end
+    end
+    
+    if functionCalls > 0 then
+        print(string.format("\n🔍 DETECTED %d SUSPICIOUS FUNCTION CALLS", functionCalls))
+        for _, log in ipairs(performanceLogs) do
+            if log.type == "FUNCTION_CALL" then
+                print(string.format("   [%.2fs] %s()", log.time, log.function))
+            end
+        end
+    end
+    
+    print("\n" .. string.rep("=", 50))
+    
+    -- 5. SAVE DATA FOR ANALYSIS (optional)
+    local function exportData()
+        local export = "Time,Ping,Memory,FPS,Anomalies\n"
+        for _, log in ipairs(performanceLogs) do
+            export = export .. string.format("%.2f,%.1f,%.1f,%.1f,%s\n",
+                log.time, log.ping or 0, log.memory or 0, log.fps or 0,
+                log.anomalies and table.concat(log.anomalies, "; ") or ""
+            )
+        end
+        return export
+    end
+    
+    -- Save to file if writefile is available
+    if writefile then
+        writefile("performance_log.csv", exportData())
+        print("📊 Data saved to 'performance_log.csv'")
+    end
+    
+    return performanceLogs
 end
 
-print("\n" .. string.rep("=", 50))
-print("Note: This is GUESSWORK based on reverse-engineering!")
-print("Real decompilation requires Luau VM knowledge.")
+-- 6. EXECUTION INSTRUCTIONS
+print([[
+=== ECLIPSE HUB PERFORMANCE SNIFFER ===
+
+INSTRUCTIONS:
+1. Run this script FIRST in your executor
+2. Wait for "PERFORMANCE MONITOR STARTED" message
+3. THEN run your Eclipse Hub script
+4. Monitor will run for 10 seconds and generate a report
+
+The script will:
+• Track ping, memory, and FPS
+• Detect performance spikes (like the 4.6s freeze)
+• Log suspicious function calls
+• Generate a detailed report
+
+Press any key to begin...
+]])
+
+-- Wait for user input
+task.wait(2)
+
+-- Setup tracking and start monitor
+pcall(setupFunctionTracker)
+local logs = startPerformanceMonitor()
+
+-- Optional: Auto-analyze for exploit patterns
+local function analyzeForExploitPatterns()
+    local freezeDetected = false
+    local freezeStart = 0
+    
+    for i = 2, #logs do
+        local prev = logs[i-1]
+        local curr = logs[i]
+        
+        -- Detect sudden FPS drop followed by recovery (freeze pattern)
+        if curr.fps and prev.fps and curr.fps < 5 and prev.fps > 20 then
+            freezeStart = curr.time
+        end
+        
+        if freezeStart > 0 and curr.fps > 20 and curr.time - freezeStart > 3 then
+            freezeDetected = true
+            print(string.format("\n🎯 DETECTED EXPLOIT LOADING FREEZE: %.2f second freeze at %.2fs", 
+                curr.time - freezeStart, freezeStart))
+            break
+        end
+    end
+    
+    return freezeDetected
+end
+
+if analyzeForExploitPatterns() then
+    print("✅ Exploit loading signature detected!")
+end
