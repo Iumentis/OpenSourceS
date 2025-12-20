@@ -1,4 +1,4 @@
-warn("v1")
+warn("v2")
 
 -- ============================================
 -- Eclipse Hub Dynamic Analysis Tool
@@ -206,32 +206,76 @@ end
 
 local function monitorMetatableHooks()
     if not ANALYSIS_CONFIG.LOG_HOOKS then return end
+    if not getrawmetatable then return end  -- Safety check
     
     -- Track metatable changes on key objects
     local importantObjects = {
-        game, workspace, game.Players, game.Players.LocalPlayer
+        game, workspace, game:GetService("Players")
     }
     
     for _, obj in ipairs(importantObjects) do
-        if obj and getrawmetatable then
-            local mt = getrawmetatable(obj)
-            if mt then
-                local originalIndex = mt.__index
-                local originalNamecall = mt.__namecall
-                
-                if originalIndex then
-                    mt.__index = function(self, key)
-                        logEvent("META_INDEX", string.format("%s.%s accessed via metatable", tostring(self), key))
-                        return originalIndex(self, key)
+        if obj then
+            local success, mt = pcall(getrawmetatable, obj)
+            if success and mt then
+                -- Check if we can modify this metatable
+                if not isreadonly or pcall(function() return not isreadonly(mt) end) then
+                    local originalIndex = mt.__index
+                    local originalNamecall = mt.__namecall
+                    local originalNewindex = mt.__newindex
+                    
+                    -- Hook __index if it exists
+                    if originalIndex then
+                        local newIndex = function(self, key)
+                            logEvent("META_INDEX", string.format("%s.%s accessed via metatable", 
+                                tostring(self), key))
+                            return originalIndex(self, key)
+                        end
+                        
+                        local setSuccess = pcall(function()
+                            mt.__index = newIndex
+                        end)
+                        
+                        if setSuccess then
+                            logEvent("HOOK_SET", string.format("Hooked __index for %s", tostring(obj)))
+                        end
                     end
-                end
-                
-                if originalNamecall then
-                    mt.__namecall = function(self, ...)
-                        local method = getnamecallmethod()
-                        logEvent("META_NAMECALL", string.format("%s:%s() called via metatable", tostring(self), method))
-                        return originalNamecall(self, ...)
+                    
+                    -- Hook __namecall if it exists
+                    if originalNamecall then
+                        local newNamecall = function(self, ...)
+                            local method = getnamecallmethod and getnamecallmethod() or "unknown"
+                            logEvent("META_NAMECALL", string.format("%s:%s() called via metatable", 
+                                tostring(self), method))
+                            return originalNamecall(self, ...)
+                        end
+                        
+                        local setSuccess = pcall(function()
+                            mt.__namecall = newNamecall
+                        end)
+                        
+                        if setSuccess then
+                            logEvent("HOOK_SET", string.format("Hooked __namecall for %s", tostring(obj)))
+                        end
                     end
+                    
+                    -- Hook __newindex if it exists
+                    if originalNewindex then
+                        local newNewindex = function(self, key, value)
+                            logEvent("META_NEWINDEX", string.format("%s.%s = %s via metatable", 
+                                tostring(self), key, type(value)))
+                            return originalNewindex(self, key, value)
+                        end
+                        
+                        local setSuccess = pcall(function()
+                            mt.__newindex = newNewindex
+                        end)
+                        
+                        if setSuccess then
+                            logEvent("HOOK_SET", string.format("Hooked __newindex for %s", tostring(obj)))
+                        end
+                    end
+                else
+                    logEvent("WARNING", string.format("Metatable for %s is readonly", tostring(obj)))
                 end
             end
         end
