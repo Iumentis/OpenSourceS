@@ -1,9 +1,4 @@
-warn("v2")
-
--- ============================================
--- Eclipse Hub Dynamic Analysis Tool
--- Run this BEFORE executing Eclipse Hub
--- ============================================
+warn("v3")
 
 -- Configuration
 local ANALYSIS_CONFIG = {
@@ -287,13 +282,47 @@ end
 -- ============================================
 
 local function monitorDrawing()
-    if Drawing then
-        local originalNew = Drawing.new
+    if not Drawing then return end
+    
+    -- Check if we can modify Drawing.new
+    local originalNew = Drawing.new
+    local setSuccess, errorMsg = pcall(function()
         Drawing.new = function(type)
             logEvent("DRAWING_CREATE", string.format("New Drawing: %s", type))
             return originalNew(type)
         end
+    end)
+    
+    if setSuccess then
         hookRegistry["Drawing.new"] = Drawing.new
+        logEvent("HOOK_SET", "Hooked Drawing.new successfully")
+    else
+        -- Alternative: Wrap the function without replacing it
+        logEvent("WARNING", string.format("Cannot hook Drawing.new: %s", errorMsg))
+        
+        -- Monitor calls indirectly by tracking created objects
+        local drawingTable = getgc and getgc()
+        if drawingTable then
+            -- This would require scanning getgc() for Drawing objects
+            logEvent("INFO", "Drawing monitoring limited - Drawing table is readonly")
+        end
+    end
+    
+    -- Also monitor other Drawing methods if accessible
+    local drawingMethods = {"Circle", "Square", "Line", "Text", "Image", "Quad"}
+    for _, method in ipairs(drawingMethods) do
+        if Drawing[method] and type(Drawing[method]) == "function" then
+            local original = Drawing[method]
+            local success = pcall(function()
+                Drawing[method] = function(...)
+                    logEvent("DRAWING_CALL", string.format("Drawing.%s()", method))
+                    return original(...)
+                end
+            end)
+            if success then
+                hookRegistry["Drawing." .. method] = Drawing[method]
+            end
+        end
     end
 end
 
