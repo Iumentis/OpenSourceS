@@ -1,115 +1,199 @@
-warn("v4")
+warn("v1")
 
-local logs = {}
-local startTime = os.clock()
+local RUN_TIME = 120  -- How long to monitor (seconds)
+local CHECK_INTERVAL = 0.5  -- Check every 0.5 seconds
+local SAMPLE_SIZE = 30  -- First X samples used for baseline (15 sec if interval=0.5)
 
-local function safeLog(event, details)
-    local timestamp = string.format("[%.3f]", os.clock() - startTime)
-    local entry = timestamp .. " " .. event .. ": " .. details
-    table.insert(logs, entry)
-    print(entry)
-end
+-- Data storage
+local memorySamples = {}
+local spikeEvents = {}
+local baseline = 0
+local baselineEstablished = false
 
--- Monitor only, don't modify anything
-local function passiveMonitor()
-    safeLog("ANALYSIS", "Passive monitor started - waiting for Eclipse")
+-- Configuration (we'll adjust these based on collected data)
+local SPIKE_THRESHOLD_PERCENT = 15  -- Flag if memory jumps X% from baseline (starting guess)
+local SPIKE_THRESHOLD_MB = 50  -- Flag if memory jumps X MB instantly (starting guess)
+local RATE_THRESHOLD_MB_PER_SEC = 30  -- Flag if memory increases faster than X MB/s
+
+local startTime = tick()
+local lastMemory = 0
+
+print("🔬 Memory Spike Monitor - Data Collection Mode")
+print("   Duration: " .. RUN_TIME .. " seconds")
+print("   Check interval: " .. CHECK_INTERVAL .. " seconds")
+print("   Baseline samples: " .. SAMPLE_SIZE)
+print("   Starting monitoring at " .. os.date("%H:%M:%S"))
+print("")
+
+-- Function to detect and record spikes
+local function checkForSpike(currentMB, sampleIndex)
+    if not baselineEstablished then
+        return false
+    end
     
-    -- Store original functions to check if they change
-    local originals = {
-        getgenv = getgenv,
-        loadstring = loadstring,
-        getrenv = getrenv,
-        debug_getconstants = debug.getconstants
+    local spikeDetected = false
+    local spikeInfo = {
+        time = tick() - startTime,
+        memory = currentMB,
+        baseline = baseline,
+        triggers = {}
     }
     
-    -- Check every 0.1 seconds for changes
-    local checkInterval = 0.1
-    local lastCheck = os.clock()
-    
-    local monitorThread
-    monitorThread = coroutine.create(function()
-        while true do
-            local now = os.clock()
-            if now - lastCheck >= checkInterval then
-                -- Check if functions have been hooked/modified
-                if getgenv and getgenv ~= originals.getgenv then
-                    safeLog("DETECTION", "getgenv was modified!")
-                end
-                
-                if loadstring and loadstring ~= originals.loadstring then
-                    safeLog("DETECTION", "loadstring was hooked!")
-                end
-                
-                if debug.getconstants and debug.getconstants ~= originals.debug_getconstants then
-                    safeLog("DETECTION", "debug.getconstants was hooked!")
-                end
-                
-                -- Check for Eclipse signature: mainKey in getgenv
-                if getgenv and type(getgenv()) == "table" then
-                    local env = getgenv()
-                    if env.mainKey and tostring(env.mainKey):match("^p95c") then
-                        safeLog("DETECTION", "Eclipse Hub mainKey found: " .. tostring(env.mainKey))
-                    end
-                end
-                
-                lastCheck = now
-            end
-            wait(checkInterval)
-        end
-    end)
-    
-    coroutine.resume(monitorThread)
-    
-    return function()
-        safeLog("SUMMARY", "=== Analysis Complete ===")
-        safeLog("SUMMARY", "Total log entries: " .. #logs)
-        
-        -- Count Eclipse-specific patterns
-        local eclipsePatterns = {
-            mainKey = 0,
-            getrenv = 0,
-            bytecode_load = 0,
-            getgenv_mod = 0
-        }
-        
-        for _, log in ipairs(logs) do
-            if log:find("mainKey") then eclipsePatterns.mainKey = eclipsePatterns.mainKey + 1 end
-            if log:find("getrenv") then eclipsePatterns.getrenv = eclipsePatterns.getrenv + 1 end
-            if log:find("bytecode") then eclipsePatterns.bytecode_load = eclipsePatterns.bytecode_load + 1 end
-            if log:find("getgenv.*modif") then eclipsePatterns.getgenv_mod = eclipsePatterns.getgenv_mod + 1 end
-        end
-        
-        for pattern, count in pairs(eclipsePatterns) do
-            if count > 0 then
-                safeLog("PATTERN", pattern .. ": " .. count .. " occurrences")
-            end
-        end
-        
-        -- Save to file
-        writefile("eclipse_analysis_safe.txt", table.concat(logs, "\n"))
-        safeLog("FILE", "Logs saved to eclipse_analysis_safe.txt")
+    -- 1. Check percentage increase from baseline
+    local percentIncrease = ((currentMB - baseline) / baseline) * 100
+    if percentIncrease >= SPIKE_THRESHOLD_PERCENT then
+        spikeDetected = true
+        table.insert(spikeInfo.triggers, string.format("%.1f%% increase", percentIncrease))
     end
+    
+    -- 2. Check absolute MB increase
+    local mbIncrease = currentMB - baseline
+    if mbIncrease >= SPIKE_THRESHOLD_MB then
+        spikeDetected = true
+        table.insert(spikeInfo.triggers, string.format("%.1f MB increase", mbIncrease))
+    end
+    
+    -- 3. Check rate of change (if we have previous sample)
+    if lastMemory > 0 then
+        local rate = (currentMB - lastMemory) / CHECK_INTERVAL  -- MB per second
+        if rate >= RATE_THRESHOLD_MB_PER_SEC then
+            spikeDetected = true
+            table.insert(spikeInfo.triggers, string.format("%.1f MB/s", rate))
+        end
+    end
+    
+    if spikeDetected then
+        table.insert(spikeEvents, spikeInfo)
+        
+        print(string.format("[🚨 SPIKE DETECTED @ %.1fs]", spikeInfo.time))
+        print(string.format("   Memory: %.1f MB (Baseline: %.1f MB)", currentMB, baseline))
+        print("   Triggers: " .. table.concat(spikeInfo.triggers, ", "))
+        print("")
+    end
+    
+    return spikeDetected
 end
 
--- Run monitor
-local printSummary = passiveMonitor()
-
-print("\n" .. string.rep("=", 60))
-print("SAFE Eclipse Hub Monitor Running")
-print("=" .. string.rep("=", 59))
-print("\nThis monitor will NOT crash Eclipse Hub")
-print("It passively watches for Eclipse signatures:")
-print("1. mainKey in getgenv()")
-print("2. getrenv() calls")
-print("3. loadstring() with bytecode")
-print("4. Function hooking patterns")
-print("\nRun Eclipse Hub now...")
-print("After it loads, call: printSummary()")
-print(string.rep("=", 60) .. "\n")
-
--- Make summary available
-if getgenv then
-    getgenv().printSummary = printSummary
+-- Main monitoring loop
+local function startMonitoring()
+    local sampleCount = 0
+    
+    while tick() - startTime < RUN_TIME do
+        wait(CHECK_INTERVAL)
+        
+        local currentMemory = game:GetService("Stats"):GetTotalMemoryUsageMb()
+        sampleCount = sampleCount + 1
+        
+        -- Store sample
+        table.insert(memorySamples, {
+            time = tick() - startTime,
+            memory = currentMemory
+        })
+        
+        -- Establish baseline (first SAMPLE_SIZE samples)
+        if not baselineEstablished and sampleCount >= SAMPLE_SIZE then
+            -- Calculate average of first samples
+            local sum = 0
+            for i = 1, math.min(SAMPLE_SIZE, #memorySamples) do
+                sum = sum + memorySamples[i].memory
+            end
+            baseline = sum / math.min(SAMPLE_SIZE, #memorySamples)
+            baselineEstablished = true
+            
+            print(string.format("✅ Baseline established: %.1f MB", baseline))
+            print("   Starting spike detection...")
+            print("")
+        end
+        
+        -- Check for spikes after baseline is established
+        local wasSpike = checkForSpike(currentMemory, sampleCount)
+        
+        -- Normal logging (less verbose)
+        if not wasSpike and sampleCount % 20 == 0 then  -- Log every 10 seconds
+            if baselineEstablished then
+                local diff = currentMemory - baseline
+                print(string.format("[%.1fs] Memory: %.1f MB (Δ%.1f MB)", 
+                    tick() - startTime, currentMemory, diff))
+            else
+                print(string.format("[%.1fs] Memory: %.1f MB (establishing baseline...)", 
+                    tick() - startTime, currentMemory))
+            end
+        end
+        
+        lastMemory = currentMemory
+    end
+    
+    -- Monitoring complete - generate report
+    generateReport()
 end
 
-return printSummary
+-- Generate summary report
+local function generateReport()
+    print("")
+    print("=" .. string.rep("=", 50))
+    print("📊 MEMORY MONITORING REPORT")
+    print("=" .. string.rep("=", 50))
+    
+    if #memorySamples == 0 then
+        print("No data collected.")
+        return
+    end
+    
+    -- Calculate statistics
+    local minMemory = math.huge
+    local maxMemory = 0
+    local totalMemory = 0
+    
+    for _, sample in ipairs(memorySamples) do
+        minMemory = math.min(minMemory, sample.memory)
+        maxMemory = math.max(maxMemory, sample.memory)
+        totalMemory = totalMemory + sample.memory
+    end
+    
+    local avgMemory = totalMemory / #memorySamples
+    
+    print(string.format("Monitoring duration: %.1f seconds", RUN_TIME))
+    print(string.format("Samples collected: %d", #memorySamples))
+    print("")
+    print("📈 Memory Statistics:")
+    print(string.format("   Minimum: %.1f MB", minMemory))
+    print(string.format("   Maximum: %.1f MB", maxMemory))
+    print(string.format("   Average: %.1f MB", avgMemory))
+    
+    if baselineEstablished then
+        print(string.format("   Baseline: %.1f MB", baseline))
+        print(string.format("   Max deviation from baseline: %.1f MB", maxMemory - baseline))
+    end
+    
+    print("")
+    print("🚨 Spike Events Detected: " .. #spikeEvents)
+    
+    if #spikeEvents > 0 then
+        for i, spike in ipairs(spikeEvents) do
+            print(string.format("   %d. @%.1fs - %.1f MB (%s)", 
+                i, spike.time, spike.memory, table.concat(spike.triggers, ", ")))
+        end
+        
+        -- Calculate average spike magnitude
+        local totalSpikeMB = 0
+        for _, spike in ipairs(spikeEvents) do
+            totalSpikeMB = totalSpikeMB + (spike.memory - baseline)
+        end
+        print(string.format("   Average spike magnitude: %.1f MB", totalSpikeMB / #spikeEvents))
+    end
+    
+    print("")
+    print("💡 Recommended Thresholds (based on data):")
+    print(string.format("   Minimum spike detection: %.1f MB", (maxMemory - baseline) * 0.3))
+    print(string.format("   Conservative detection: %.1f MB", (maxMemory - baseline) * 0.5))
+    
+    print("=" .. string.rep("=", 50))
+end
+
+-- Start monitoring
+spawn(startMonitoring)
+
+print("✅ Monitor started. Inject Eclipse Hub at any time.")
+print("   The script will run for " .. RUN_TIME .. " seconds.")
+print("   Watch for spike detections above.")
+print("")
