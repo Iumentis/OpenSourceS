@@ -1,188 +1,126 @@
-print("=== STARTING HUB ANALYSIS ===")
+warn("v1")
 
--- 1. Capture baseline environment state
-local analysis_data = {
-    baseline = {
-        _G_keys = {},
-        shared_keys = {},
-        functions = {},
-        memory = game:GetService("Stats"):GetTotalMemoryUsageMb()
-    },
-    monitored_calls = {},
-    unexpected_instances = {},
-    start_time = os.clock()
+local analysis = {
+    start_time = os.clock(),
+    prints = {},
+    warns = {},
+    initial_globals = {},
+    initial_shared = {},
+    start_memory = game:GetService("Stats"):GetTotalMemoryUsageMb()
 }
 
--- Snapshot of _G before
+-- 1. Capture initial state
 for k, v in pairs(_G) do
-    analysis_data.baseline._G_keys[k] = {type = type(v), exists = true}
+    analysis.initial_globals[k] = true
 end
 
--- Snapshot of shared before
-if type(shared) == "table" then
+if shared and type(shared) == "table" then
     for k, v in pairs(shared) do
-        analysis_data.baseline.shared_keys[k] = {type = type(v), exists = true}
+        analysis.initial_shared[k] = true
     end
 end
 
--- 2. Set up monitoring hooks (SAFE VERSION)
-local monitored_calls = analysis_data.monitored_calls
+-- 2. Simple print hook (works in most executors)
 local original_print = print
 local original_warn = warn
 
--- Store in a table we control, not directly replacing
-_G._ANALYSIS_HOOKS = {
-    print = function(...)
-        local args = {...}
-        local trace = debug.traceback()
-        table.insert(monitored_calls, {
-            type = "print",
-            args = args,
-            trace = trace,
-            time = os.clock() - analysis_data.start_time
-        })
-        return original_print(...)
-    end,
+local function safe_hook_print()
+    local success, msg = pcall(function()
+        print = function(...)
+            local args = {...}
+            local msg = table.concat(args, " ")
+            table.insert(analysis.prints, {
+                time = os.clock() - analysis.start_time,
+                message = msg,
+                trace = debug.traceback()
+            })
+            return original_print(...)
+        end
+    end)
     
-    warn = function(...)
-        local args = {...}
-        local trace = debug.traceback()
-        table.insert(monitored_calls, {
-            type = "warn",
-            args = args,
-            trace = trace,
-            time = os.clock() - analysis_data.start_time
-        })
-        return original_warn(...)
-    end
-}
-
--- Hook via metatable (if possible) or direct assignment
-local function setupHooks()
-    -- Try metatable approach first
-    local mt = getmetatable(_G)
-    if mt then
-        local original_index = mt.__index
+    if not success then
+        print("Could not hook print directly, trying metatable...")
+        
+        -- Try metatable approach
+        local mt = getmetatable(_G) or {}
+        local old_index = mt.__index
+        
         mt.__index = function(t, k)
             if k == "print" then
-                return _G._ANALYSIS_HOOKS.print
-            elseif k == "warn" then
-                return _G._ANALYSIS_HOOKS.warn
-            end
-            return original_index and original_index(t, k) or rawget(t, k)
-        end
-    else
-        -- Fallback: Direct assignment (may fail, but we try)
-        local success = pcall(function()
-            print = _G._ANALYSIS_HOOKS.print
-            warn = _G._ANALYSIS_HOOKS.warn
-        end)
-        
-        if not success then
-            print("Warning: Could not hook print/warn directly")
-        end
-    end
-end
-
-setupHooks()
-
--- 3. Monitor instance creation (ALTERNATIVE APPROACH)
--- Since we can't hook Instance.new, we'll monitor via DescendantAdded events
-local unexpected_instances = analysis_data.unexpected_instances
-
--- Track containers the hub might modify
-local containers_to_watch = {
-    game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"),
-    game:GetService("CoreGui"),
-    game:GetService("StarterGui"),
-    game
-}
-
-for _, container in ipairs(containers_to_watch) do
-    if container then
-        local connection
-        connection = container.DescendantAdded:Connect(function(descendant)
-            table.insert(unexpected_instances, {
-                class = descendant.ClassName,
-                name = descendant.Name,
-                path = descendant:GetFullName(),
-                time = os.clock() - analysis_data.start_time,
-                container = container.Name
-            })
-        end)
-        -- Store connection so it doesn't get garbage collected
-        table.insert(analysis_data._connections or {}, connection)
-    end
-end
-
--- 4. Monitor function creation via debug library
-analysis_data.new_functions = {}
-
--- Store initial functions
-local initial_functions = {}
-for i = 1, 100 do  -- Reasonable limit
-    local info = debug.getinfo(i)
-    if not info then break end
-    if info.source then
-        initial_functions[info.source] = true
-    end
-end
-
--- Function to check for new functions
-local function checkNewFunctions()
-    for i = 1, 200 do  -- Increased limit
-        local info = debug.getinfo(i)
-        if not info then break end
-        if info.source and not initial_functions[info.source] then
-            -- New function from hub
-            if not analysis_data.new_functions[info.source] then
-                analysis_data.new_functions[info.source] = {
-                    source = info.source,
-                    first_seen = os.clock() - analysis_data.start_time,
-                    linedefined = info.linedefined,
-                    lastlinedefined = info.lastlinedefined
-                }
-            end
-        end
-    end
-end
-
--- 5. Monitor garbage collection changes
-analysis_data.gc_objects = {}
-local function scanGCForNewObjects()
-    local objects = getgc and getgc() or {}
-    for _, obj in pairs(objects) do
-        if type(obj) == "table" then
-            local obj_str = tostring(obj)
-            if not analysis_data.gc_objects[obj_str] then
-                analysis_data.gc_objects[obj_str] = {
-                    type = "table",
-                    time = os.clock() - analysis_data.start_time
-                }
-            end
-        elseif type(obj) == "function" then
-            local info = debug.getinfo(obj, "S")
-            if info and info.source then
-                local key = info.source
-                if not analysis_data.gc_objects[key] then
-                    analysis_data.gc_objects[key] = {
-                        type = "function",
-                        time = os.clock() - analysis_data.start_time,
-                        source = info.source
-                    }
+                return function(...)
+                    local args = {...}
+                    local msg = table.concat(args, " ")
+                    table.insert(analysis.prints, {
+                        time = os.clock() - analysis.start_time,
+                        message = msg,
+                        trace = debug.traceback()
+                    })
+                    return original_print(...)
                 end
             end
+            if old_index then
+                return old_index(t, k)
+            end
+            return rawget(t, k)
+        end
+        
+        setmetatable(_G, mt)
+    end
+end
+
+local function safe_hook_warn()
+    pcall(function()
+        warn = function(...)
+            local args = {...}
+            local msg = table.concat(args, " ")
+            table.insert(analysis.warns, {
+                time = os.clock() - analysis.start_time,
+                message = msg,
+                trace = debug.traceback()
+            })
+            return original_warn(...)
+        end
+    end)
+end
+
+-- Setup hooks
+safe_hook_print()
+safe_hook_warn()
+
+-- 3. Monitor instance creation via event
+analysis.new_instances = {}
+analysis.instance_connections = {}
+
+local function monitor_instances()
+    local containers = {
+        game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"),
+        game:GetService("CoreGui"),
+        game:GetService("StarterGui"),
+        game
+    }
+    
+    for _, container in ipairs(containers) do
+        if container then
+            local conn = container.DescendantAdded:Connect(function(descendant)
+                table.insert(analysis.new_instances, {
+                    time = os.clock() - analysis.start_time,
+                    class = descendant.ClassName,
+                    name = descendant.Name,
+                    path = descendant:GetFullName()
+                })
+            end)
+            table.insert(analysis.instance_connections, conn)
         end
     end
 end
 
--- Initial GC scan
-if getgc then
-    scanGCForNewObjects()
-end
+-- Start monitoring
+monitor_instances()
 
-print("Baseline captured. Ready to execute hub in 1 second...")
+print("Analysis setup complete. Ready for hub in 1 second...")
 wait(1)
 
--- Return the analysis data structure
-return analysis_data
+-- Store for later access
+_G.SIMPLE_ANALYSIS_DATA = analysis
+
+return analysis
