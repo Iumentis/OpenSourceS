@@ -1,199 +1,188 @@
-warn("v1")
+print("=== STARTING HUB ANALYSIS ===")
 
-local RUN_TIME = 120  -- How long to monitor (seconds)
-local CHECK_INTERVAL = 0.5  -- Check every 0.5 seconds
-local SAMPLE_SIZE = 30  -- First X samples used for baseline (15 sec if interval=0.5)
+-- 1. Capture baseline environment state
+local analysis_data = {
+    baseline = {
+        _G_keys = {},
+        shared_keys = {},
+        functions = {},
+        memory = game:GetService("Stats"):GetTotalMemoryUsageMb()
+    },
+    monitored_calls = {},
+    unexpected_instances = {},
+    start_time = os.clock()
+}
 
--- Data storage
-local memorySamples = {}
-local spikeEvents = {}
-local baseline = 0
-local baselineEstablished = false
-
--- Configuration (we'll adjust these based on collected data)
-local SPIKE_THRESHOLD_PERCENT = 15  -- Flag if memory jumps X% from baseline (starting guess)
-local SPIKE_THRESHOLD_MB = 50  -- Flag if memory jumps X MB instantly (starting guess)
-local RATE_THRESHOLD_MB_PER_SEC = 30  -- Flag if memory increases faster than X MB/s
-
-local startTime = tick()
-local lastMemory = 0
-
-print("🔬 Memory Spike Monitor - Data Collection Mode")
-print("   Duration: " .. RUN_TIME .. " seconds")
-print("   Check interval: " .. CHECK_INTERVAL .. " seconds")
-print("   Baseline samples: " .. SAMPLE_SIZE)
-print("   Starting monitoring at " .. os.date("%H:%M:%S"))
-print("")
-
--- Function to detect and record spikes
-local function checkForSpike(currentMB, sampleIndex)
-    if not baselineEstablished then
-        return false
-    end
-    
-    local spikeDetected = false
-    local spikeInfo = {
-        time = tick() - startTime,
-        memory = currentMB,
-        baseline = baseline,
-        triggers = {}
-    }
-    
-    -- 1. Check percentage increase from baseline
-    local percentIncrease = ((currentMB - baseline) / baseline) * 100
-    if percentIncrease >= SPIKE_THRESHOLD_PERCENT then
-        spikeDetected = true
-        table.insert(spikeInfo.triggers, string.format("%.1f%% increase", percentIncrease))
-    end
-    
-    -- 2. Check absolute MB increase
-    local mbIncrease = currentMB - baseline
-    if mbIncrease >= SPIKE_THRESHOLD_MB then
-        spikeDetected = true
-        table.insert(spikeInfo.triggers, string.format("%.1f MB increase", mbIncrease))
-    end
-    
-    -- 3. Check rate of change (if we have previous sample)
-    if lastMemory > 0 then
-        local rate = (currentMB - lastMemory) / CHECK_INTERVAL  -- MB per second
-        if rate >= RATE_THRESHOLD_MB_PER_SEC then
-            spikeDetected = true
-            table.insert(spikeInfo.triggers, string.format("%.1f MB/s", rate))
-        end
-    end
-    
-    if spikeDetected then
-        table.insert(spikeEvents, spikeInfo)
-        
-        print(string.format("[🚨 SPIKE DETECTED @ %.1fs]", spikeInfo.time))
-        print(string.format("   Memory: %.1f MB (Baseline: %.1f MB)", currentMB, baseline))
-        print("   Triggers: " .. table.concat(spikeInfo.triggers, ", "))
-        print("")
-    end
-    
-    return spikeDetected
+-- Snapshot of _G before
+for k, v in pairs(_G) do
+    analysis_data.baseline._G_keys[k] = {type = type(v), exists = true}
 end
 
--- Main monitoring loop
-local function startMonitoring()
-    local sampleCount = 0
-    
-    while tick() - startTime < RUN_TIME do
-        wait(CHECK_INTERVAL)
-        
-        local currentMemory = game:GetService("Stats"):GetTotalMemoryUsageMb()
-        sampleCount = sampleCount + 1
-        
-        -- Store sample
-        table.insert(memorySamples, {
-            time = tick() - startTime,
-            memory = currentMemory
+-- Snapshot of shared before
+if type(shared) == "table" then
+    for k, v in pairs(shared) do
+        analysis_data.baseline.shared_keys[k] = {type = type(v), exists = true}
+    end
+end
+
+-- 2. Set up monitoring hooks (SAFE VERSION)
+local monitored_calls = analysis_data.monitored_calls
+local original_print = print
+local original_warn = warn
+
+-- Store in a table we control, not directly replacing
+_G._ANALYSIS_HOOKS = {
+    print = function(...)
+        local args = {...}
+        local trace = debug.traceback()
+        table.insert(monitored_calls, {
+            type = "print",
+            args = args,
+            trace = trace,
+            time = os.clock() - analysis_data.start_time
         })
-        
-        -- Establish baseline (first SAMPLE_SIZE samples)
-        if not baselineEstablished and sampleCount >= SAMPLE_SIZE then
-            -- Calculate average of first samples
-            local sum = 0
-            for i = 1, math.min(SAMPLE_SIZE, #memorySamples) do
-                sum = sum + memorySamples[i].memory
-            end
-            baseline = sum / math.min(SAMPLE_SIZE, #memorySamples)
-            baselineEstablished = true
-            
-            print(string.format("✅ Baseline established: %.1f MB", baseline))
-            print("   Starting spike detection...")
-            print("")
-        end
-        
-        -- Check for spikes after baseline is established
-        local wasSpike = checkForSpike(currentMemory, sampleCount)
-        
-        -- Normal logging (less verbose)
-        if not wasSpike and sampleCount % 20 == 0 then  -- Log every 10 seconds
-            if baselineEstablished then
-                local diff = currentMemory - baseline
-                print(string.format("[%.1fs] Memory: %.1f MB (Δ%.1f MB)", 
-                    tick() - startTime, currentMemory, diff))
-            else
-                print(string.format("[%.1fs] Memory: %.1f MB (establishing baseline...)", 
-                    tick() - startTime, currentMemory))
-            end
-        end
-        
-        lastMemory = currentMemory
-    end
+        return original_print(...)
+    end,
     
-    -- Monitoring complete - generate report
-    generateReport()
+    warn = function(...)
+        local args = {...}
+        local trace = debug.traceback()
+        table.insert(monitored_calls, {
+            type = "warn",
+            args = args,
+            trace = trace,
+            time = os.clock() - analysis_data.start_time
+        })
+        return original_warn(...)
+    end
+}
+
+-- Hook via metatable (if possible) or direct assignment
+local function setupHooks()
+    -- Try metatable approach first
+    local mt = getmetatable(_G)
+    if mt then
+        local original_index = mt.__index
+        mt.__index = function(t, k)
+            if k == "print" then
+                return _G._ANALYSIS_HOOKS.print
+            elseif k == "warn" then
+                return _G._ANALYSIS_HOOKS.warn
+            end
+            return original_index and original_index(t, k) or rawget(t, k)
+        end
+    else
+        -- Fallback: Direct assignment (may fail, but we try)
+        local success = pcall(function()
+            print = _G._ANALYSIS_HOOKS.print
+            warn = _G._ANALYSIS_HOOKS.warn
+        end)
+        
+        if not success then
+            print("Warning: Could not hook print/warn directly")
+        end
+    end
 end
 
--- Generate summary report
-local function generateReport()
-    print("")
-    print("=" .. string.rep("=", 50))
-    print("📊 MEMORY MONITORING REPORT")
-    print("=" .. string.rep("=", 50))
-    
-    if #memorySamples == 0 then
-        print("No data collected.")
-        return
+setupHooks()
+
+-- 3. Monitor instance creation (ALTERNATIVE APPROACH)
+-- Since we can't hook Instance.new, we'll monitor via DescendantAdded events
+local unexpected_instances = analysis_data.unexpected_instances
+
+-- Track containers the hub might modify
+local containers_to_watch = {
+    game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"),
+    game:GetService("CoreGui"),
+    game:GetService("StarterGui"),
+    game
+}
+
+for _, container in ipairs(containers_to_watch) do
+    if container then
+        local connection
+        connection = container.DescendantAdded:Connect(function(descendant)
+            table.insert(unexpected_instances, {
+                class = descendant.ClassName,
+                name = descendant.Name,
+                path = descendant:GetFullName(),
+                time = os.clock() - analysis_data.start_time,
+                container = container.Name
+            })
+        end)
+        -- Store connection so it doesn't get garbage collected
+        table.insert(analysis_data._connections or {}, connection)
     end
-    
-    -- Calculate statistics
-    local minMemory = math.huge
-    local maxMemory = 0
-    local totalMemory = 0
-    
-    for _, sample in ipairs(memorySamples) do
-        minMemory = math.min(minMemory, sample.memory)
-        maxMemory = math.max(maxMemory, sample.memory)
-        totalMemory = totalMemory + sample.memory
-    end
-    
-    local avgMemory = totalMemory / #memorySamples
-    
-    print(string.format("Monitoring duration: %.1f seconds", RUN_TIME))
-    print(string.format("Samples collected: %d", #memorySamples))
-    print("")
-    print("📈 Memory Statistics:")
-    print(string.format("   Minimum: %.1f MB", minMemory))
-    print(string.format("   Maximum: %.1f MB", maxMemory))
-    print(string.format("   Average: %.1f MB", avgMemory))
-    
-    if baselineEstablished then
-        print(string.format("   Baseline: %.1f MB", baseline))
-        print(string.format("   Max deviation from baseline: %.1f MB", maxMemory - baseline))
-    end
-    
-    print("")
-    print("🚨 Spike Events Detected: " .. #spikeEvents)
-    
-    if #spikeEvents > 0 then
-        for i, spike in ipairs(spikeEvents) do
-            print(string.format("   %d. @%.1fs - %.1f MB (%s)", 
-                i, spike.time, spike.memory, table.concat(spike.triggers, ", ")))
-        end
-        
-        -- Calculate average spike magnitude
-        local totalSpikeMB = 0
-        for _, spike in ipairs(spikeEvents) do
-            totalSpikeMB = totalSpikeMB + (spike.memory - baseline)
-        end
-        print(string.format("   Average spike magnitude: %.1f MB", totalSpikeMB / #spikeEvents))
-    end
-    
-    print("")
-    print("💡 Recommended Thresholds (based on data):")
-    print(string.format("   Minimum spike detection: %.1f MB", (maxMemory - baseline) * 0.3))
-    print(string.format("   Conservative detection: %.1f MB", (maxMemory - baseline) * 0.5))
-    
-    print("=" .. string.rep("=", 50))
 end
 
--- Start monitoring
-spawn(startMonitoring)
+-- 4. Monitor function creation via debug library
+analysis_data.new_functions = {}
 
-print("✅ Monitor started. Inject Eclipse Hub at any time.")
-print("   The script will run for " .. RUN_TIME .. " seconds.")
-print("   Watch for spike detections above.")
-print("")
+-- Store initial functions
+local initial_functions = {}
+for i = 1, 100 do  -- Reasonable limit
+    local info = debug.getinfo(i)
+    if not info then break end
+    if info.source then
+        initial_functions[info.source] = true
+    end
+end
+
+-- Function to check for new functions
+local function checkNewFunctions()
+    for i = 1, 200 do  -- Increased limit
+        local info = debug.getinfo(i)
+        if not info then break end
+        if info.source and not initial_functions[info.source] then
+            -- New function from hub
+            if not analysis_data.new_functions[info.source] then
+                analysis_data.new_functions[info.source] = {
+                    source = info.source,
+                    first_seen = os.clock() - analysis_data.start_time,
+                    linedefined = info.linedefined,
+                    lastlinedefined = info.lastlinedefined
+                }
+            end
+        end
+    end
+end
+
+-- 5. Monitor garbage collection changes
+analysis_data.gc_objects = {}
+local function scanGCForNewObjects()
+    local objects = getgc and getgc() or {}
+    for _, obj in pairs(objects) do
+        if type(obj) == "table" then
+            local obj_str = tostring(obj)
+            if not analysis_data.gc_objects[obj_str] then
+                analysis_data.gc_objects[obj_str] = {
+                    type = "table",
+                    time = os.clock() - analysis_data.start_time
+                }
+            end
+        elseif type(obj) == "function" then
+            local info = debug.getinfo(obj, "S")
+            if info and info.source then
+                local key = info.source
+                if not analysis_data.gc_objects[key] then
+                    analysis_data.gc_objects[key] = {
+                        type = "function",
+                        time = os.clock() - analysis_data.start_time,
+                        source = info.source
+                    }
+                end
+            end
+        end
+    end
+end
+
+-- Initial GC scan
+if getgc then
+    scanGCForNewObjects()
+end
+
+print("Baseline captured. Ready to execute hub in 1 second...")
+wait(1)
+
+-- Return the analysis data structure
+return analysis_data
