@@ -1,294 +1,167 @@
-local output = {}
+-- CHECK_RESULTS.lua
+print("\n=== HUB ANALYSIS RESULTS ===")
 
-local function add(line)
-    table.insert(output, line)
+local data = _G.SIMPLE_ANALYSIS_DATA
+if not data then
+    print("ERROR: No analysis data found!")
+    print("Make sure you ran SIMPLE_ANALYSIS.lua first")
+    return
 end
 
--- SAFE scanning function
-local function safeScan()
-    -- 1. BASIC INFO
-    add("=== GAME STRUCTURE - NAMES & PATHS ===")
-    add("Time: " .. os.date("%Y-%m-%d %H:%M:%S"))
-    add("PlaceId: " .. tostring(game.PlaceId))
-    add("")
-    
-    -- 2. PLAYERS
-    add("🎮 PLAYERS:")
-    local success, players = pcall(function() return game:GetService("Players") end)
-    if success and players then
-        local playerList = {}
-        for _, player in pairs(players:GetPlayers()) do
-            table.insert(playerList, player.Name)
-        end
-        add("Online: " .. #playerList .. " - " .. table.concat(playerList, ", "))
-        
-        local me = players.LocalPlayer
-        if me then
-            add("You: " .. me.Name)
-            
-            -- Character tools
-            if me.Character then
-                local tools = {}
-                for _, item in pairs(me.Character:GetChildren()) do
-                    if item:IsA("Tool") then
-                        table.insert(tools, item.Name)
-                    end
-                end
-                if #tools > 0 then
-                    add("Equipped: " .. table.concat(tools, ", "))
-                end
-            end
-            
-            -- Backpack tools
-            if me.Backpack then
-                local backpackTools = {}
-                for _, item in pairs(me.Backpack:GetChildren()) do
-                    if item:IsA("Tool") then
-                        table.insert(backpackTools, item.Name)
-                    end
-                end
-                if #backpackTools > 0 then
-                    add("Backpack: " .. table.concat(backpackTools, ", "))
-                end
-            end
-        end
-    end
-    add("")
-    
-    -- 3. WORKSPACE (limited)
-    add("🏗️ WORKSPACE ITEMS:")
-    local wsSuccess, workspace = pcall(function() return game:GetService("Workspace") end)
-    if wsSuccess and workspace then
-        local items = workspace:GetChildren()
-        add("Total: " .. #items)
-        
-        -- Show important items only
-        for i = 1, math.min(20, #items) do
-            local item = items[i]
-            if item:IsA("Model") or item:IsA("Tool") or item:IsA("Folder") then
-                add("  • " .. item.Name .. " (" .. item.ClassName .. ")")
-                
-                -- Quick peek inside models/tools
-                if item:IsA("Tool") then
-                    -- Check for remotes in tools
-                    for _, child in pairs(item:GetChildren()) do
-                        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                            add("    ↳ " .. child.Name .. " (" .. child.ClassName .. ")")
-                        end
-                    end
-                end
-            end
-        end
-        
-        if #items > 20 then
-            add("  ... and " .. (#items - 20) .. " more items")
-        end
-    end
-    add("")
-    
-    -- 4. REPLICATEDSTORAGE (MOST IMPORTANT - GET NAMES!)
-    add("📦 REPLICATEDSTORAGE (ALL ITEMS):")
-    local rsSuccess, rs = pcall(function() return game:GetService("ReplicatedStorage") end)
-    if rsSuccess and rs then
-        local items = rs:GetChildren()
-        add("Total items: " .. #items)
-        
-        -- Group important items
-        local modules = {}
-        local remotes = {}
-        local folders = {}
-        
-        for _, item in pairs(items) do
-            if item:IsA("ModuleScript") then
-                table.insert(modules, item.Name)
-            elseif item:IsA("RemoteEvent") then
-                table.insert(remotes, item.Name .. " (Event)")
-            elseif item:IsA("RemoteFunction") then
-                table.insert(remotes, item.Name .. " (Function)")
-            elseif item:IsA("Folder") then
-                table.insert(folders, item.Name)
-            end
-        end
-        
-        -- Show modules
-        if #modules > 0 then
-            add("  📄 MODULESCRIPTS (" .. #modules .. "):")
-            for _, name in pairs(modules) do
-                add("    • " .. name)
-            end
-        end
-        
-        -- Show remotes
-        if #remotes > 0 then
-            add("  🔗 REMOTES (" .. #remotes .. "):")
-            for _, name in pairs(remotes) do
-                add("    • " .. name)
-            end
-        end
-        
-        -- Show folders (peek inside)
-        if #folders > 0 then
-            add("  📁 FOLDERS (" .. #folders .. "):")
-            for _, folderName in pairs(folders) do
-                local folder = rs:FindFirstChild(folderName)
-                if folder then
-                    add("    • " .. folderName)
-                    
-                    -- Show important contents
-                    local contents = folder:GetChildren()
-                    local important = 0
-                    for j = 1, math.min(5, #contents) do
-                        local content = contents[j]
-                        if content:IsA("ModuleScript") or content:IsA("RemoteEvent") then
-                            add("      ↳ " .. content.Name .. " (" .. content.ClassName .. ")")
-                            important = important + 1
-                        end
-                    end
-                    
-                    if important == 0 and #contents > 0 then
-                        add("      ↳ Contains " .. #contents .. " items")
-                    end
-                end
-            end
-        end
-    end
-    add("")
-    
-    -- 5. REMOTES EVERYWHERE
-    add("🔌 ALL REMOTES IN GAME:")
-    local allRemotes = {}
-    local services = {"ReplicatedStorage", "Workspace", "Players", "ReplicatedFirst"}
-    
-    for _, serviceName in pairs(services) do
-        local success, service = pcall(function() return game:GetService(serviceName) end)
-        if success and service then
-            for _, item in pairs(service:GetDescendants()) do
-                if item:IsA("RemoteEvent") then
-                    table.insert(allRemotes, serviceName .. "." .. item.Name .. " (Event)")
-                elseif item:IsA("RemoteFunction") then
-                    table.insert(allRemotes, serviceName .. "." .. item.Name .. " (Function)")
-                end
-            end
-        end
-    end
-    
-    if #allRemotes > 0 then
-        for _, remote in pairs(allRemotes) do
-            add("  • " .. remote)
-        end
-    else
-        add("  No remotes found")
-    end
-    add("")
-    
-    -- 6. TOOLS/WEAPONS
-    add("🛠️ TOOLS & WEAPONS FOUND:")
-    local weapons = {}
-    
-    if wsSuccess and workspace then
-        -- Search for tools
-        for _, item in pairs(workspace:GetDescendants()) do
-            if item:IsA("Tool") then
-                table.insert(weapons, item:GetFullName())
-                if #weapons >= 10 then break end
-            end
-        end
-    end
-    
-    if #weapons > 0 then
-        for _, weapon in pairs(weapons) do
-            add("  • " .. weapon)
-        end
-    else
-        add("  No tools found in workspace")
-    end
-    
-    -- Check players for tools
-    if success and players then
-        for _, player in pairs(players:GetPlayers()) do
-            if player.Character then
-                for _, item in pairs(player.Character:GetChildren()) do
-                    if item:IsA("Tool") then
-                        add("  • " .. player.Name .. " has: " .. item.Name)
-                    end
-                end
-            end
-        end
-    end
-    
-    return table.concat(output, "\n")
-end
+local total_time = os.clock() - data.start_time
+print(string.format("Total monitoring time: %.2f seconds", total_time))
 
--- MAIN EXECUTION (SILENT - NO PRINTING UNTIL END)
-local fileContent = ""
-
--- Try to scan safely
-local scanSuccess, scanResult = pcall(safeScan)
-if scanSuccess then
-    fileContent = scanResult
+-- 1. Show all captured prints
+print("\n[ALL CAPTURED PRINT STATEMENTS]")
+if #data.prints > 0 then
+    for i, entry in ipairs(data.prints) do
+        print(string.format("[%06.3fs] %s", entry.time, entry.message))
+    end
 else
-    fileContent = "SCAN FAILED: " .. tostring(scanResult)
+    print("   (No prints captured - hook may have failed)")
 end
 
--- TRY TO SAVE TO FILE (SILENTLY)
-local saveSuccess = false
-local fileName = "game_info_" .. os.time() .. ".txt"
+-- 2. Show hub-specific prints
+print("\n[POTENTIAL HUB SIGNATURES]")
+local hub_keywords = {
+    "eclipse", "hub", "load", "auth", "check", "key", 
+    "main", "init", "inject", "execute", "script"
+}
 
-if type(writefile) == "function" then
-    local writeSuccess, writeError = pcall(writefile, fileName, fileContent)
-    if writeSuccess then
-        saveSuccess = true
-    end
-end
-
--- NOW print minimal info
-print("=" .. string.rep("=", 50))
-print("SILENT SCANNER COMPLETE")
-print("=" .. string.rep("=", 50))
-
-if saveSuccess then
-    print("✅ SAVED TO FILE: " .. fileName)
-    
-    -- Show preview of what was saved
-    print("\n📄 FILE PREVIEW (first 20 lines):")
-    print(string.rep("-", 50))
-    
-    local lines = {}
-    for line in fileContent:gmatch("[^\r\n]+") do
-        table.insert(lines, line)
-        if #lines >= 20 then
-            table.insert(lines, "... (truncated)")
+local hub_prints = {}
+for _, entry in ipairs(data.prints) do
+    local lower_msg = entry.message:lower()
+    for _, keyword in ipairs(hub_keywords) do
+        if lower_msg:find(keyword) then
+            table.insert(hub_prints, {
+                time = entry.time,
+                message = entry.message,
+                keyword = keyword
+            })
             break
         end
     end
-    print(table.concat(lines, "\n"))
-    
-else
-    print("❌ FAILED TO SAVE FILE")
-    print("Trying fallback...")
-    
-    -- Fallback: show minimal info
-    print("\n📋 MINIMAL INFO (copy manually):")
-    print(string.rep("-", 50))
-    print("PlaceId: " .. tostring(game.PlaceId))
-    
-    local players = game:GetService("Players")
-    local me = players.LocalPlayer
-    if me then
-        print("You: " .. me.Name)
-    end
-    
-    -- Just show module count
-    local rs = game:GetService("ReplicatedStorage")
-    local modules = 0
-    for _, item in pairs(rs:GetChildren()) do
-        if item:IsA("ModuleScript") then
-            modules = modules + 1
-        end
-    end
-    print("ModuleScripts in ReplicatedStorage: " .. modules)
 end
 
-print(string.rep("=", 50))
-print("Check your executor's folder for the saved file!")
-print("File should contain ALL game structure details.")
+if #hub_prints > 0 then
+    for _, entry in ipairs(hub_prints) do
+        print(string.format("[%06.3fs] [%s] %s", 
+            entry.time, entry.keyword, entry.message))
+    end
+else
+    print("   (No clear hub signatures found in prints)")
+end
+
+-- 3. Check for new global variables
+print("\n[NEW GLOBAL VARIABLES]")
+local current_globals = {}
+for k, v in pairs(_G) do
+    current_globals[k] = true
+end
+
+local new_globals = {}
+for k, _ in pairs(current_globals) do
+    if not data.initial_globals[k] then
+        new_globals[k] = true
+    end
+end
+
+if next(new_globals) then
+    for global_name, _ in pairs(new_globals) do
+        print("   _G." .. global_name)
+        
+        -- Show value if it's a string
+        local value = _G[global_name]
+        if type(value) == "string" then
+            local preview = value
+            if #preview > 50 then
+                preview = preview:sub(1, 50) .. "..."
+            end
+            print("      Value: \"" .. preview .. "\"")
+        end
+    end
+else
+    print("   (No new global variables)")
+end
+
+-- 4. Check shared table
+print("\n[NEW SHARED VARIABLES]")
+if shared and type(shared) == "table" then
+    local new_in_shared = {}
+    for k, v in pairs(shared) do
+        if not data.initial_shared[k] then
+            new_in_shared[k] = true
+        end
+    end
+    
+    if next(new_in_shared) then
+        for name, _ in pairs(new_in_shared) do
+            print("   shared." .. name)
+        end
+    else
+        print("   (No new shared variables)")
+    end
+end
+
+-- 5. Check new instances
+print("\n[NEW INSTANCES CREATED]")
+if #data.new_instances > 0 then
+    -- Group by class
+    local by_class = {}
+    for _, inst in ipairs(data.new_instances) do
+        by_class[inst.class] = (by_class[inst.class] or 0) + 1
+    end
+    
+    -- Show summary
+    for class, count in pairs(by_class) do
+        print(string.format("   %s: %d instances", class, count))
+    end
+    
+    -- Show first 3 in detail
+    print("\n   First 3 instances:")
+    for i = 1, math.min(3, #data.new_instances) do
+        local inst = data.new_instances[i]
+        print(string.format("   [%06.3fs] %s: %s", 
+            inst.time, inst.class, inst.name))
+    end
+else
+    print("   (No new instances detected)")
+end
+
+-- 6. Memory usage
+local end_memory = game:GetService("Stats"):GetTotalMemoryUsageMb()
+local memory_delta = end_memory - data.start_memory
+print(string.format("\n[MEMORY USAGE]"))
+print(string.format("   Start:  %.2f MB", data.start_memory))
+print(string.format("   End:    %.2f MB", end_memory))
+print(string.format("   Change: %.2f MB", memory_delta))
+
+-- 7. Look for Eclipse-specific patterns
+print("\n[ECLIPSE HUB SPECIFIC CHECKS]")
+
+-- Check for Eclipse UUID pattern
+local eclipse_found = false
+for k, v in pairs(_G) do
+    if type(v) == "string" then
+        -- UUID pattern: p95cxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        if v:match("p95c[0-9a-f]+%-[0-9a-f]+%-[0-9a-f]+%-[0-9a-f]+%-[0-9a-f]+") then
+            print("   Found Eclipse UUID pattern in _G." .. k)
+            eclipse_found = true
+        end
+    end
+end
+
+-- Check prints for Eclipse messages
+for _, entry in ipairs(data.prints) do
+    local msg = entry.message
+    if msg:find("Eclipse Hub") or msg:find("Eclipse Detector") then
+        print(string.format("   Eclipse message found: \"%s\"", msg))
+        eclipse_found = true
+    end
+end
+
+if not eclipse_found then
+    print("   (No Eclipse-specific patterns found)")
+end
+
+print("\n=== ANALYSIS COMPLETE ===")
