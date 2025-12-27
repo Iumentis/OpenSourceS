@@ -1,126 +1,56 @@
-warn("v1")
+getgenv().infsprint = false;
 
-local analysis = {
-    start_time = os.clock(),
-    prints = {},
-    warns = {},
-    initial_globals = {},
-    initial_shared = {},
-    start_memory = game:GetService("Stats"):GetTotalMemoryUsageMb()
-}
 
--- 1. Capture initial state
-for k, v in pairs(_G) do
-    analysis.initial_globals[k] = true
-end
+--Services here
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local sprintEvent = ReplicatedStorage:WaitForChild("Event")
+local sprinting = false
+local originalSprintValue = 20
 
-if shared and type(shared) == "table" then
-    for k, v in pairs(shared) do
-        analysis.initial_shared[k] = true
-    end
-end
 
--- 2. Simple print hook (works in most executors)
-local original_print = print
-local original_warn = warn
-
-local function safe_hook_print()
-    local success, msg = pcall(function()
-        print = function(...)
-            local args = {...}
-            local msg = table.concat(args, " ")
-            table.insert(analysis.prints, {
-                time = os.clock() - analysis.start_time,
-                message = msg,
-                trace = debug.traceback()
-            })
-            return original_print(...)
-        end
-    end)
-    
-    if not success then
-        print("Could not hook print directly, trying metatable...")
-        
-        -- Try metatable approach
-        local mt = getmetatable(_G) or {}
-        local old_index = mt.__index
-        
-        mt.__index = function(t, k)
-            if k == "print" then
-                return function(...)
-                    local args = {...}
-                    local msg = table.concat(args, " ")
-                    table.insert(analysis.prints, {
-                        time = os.clock() - analysis.start_time,
-                        message = msg,
-                        trace = debug.traceback()
-                    })
-                    return original_print(...)
-                end
+local function infiniteSprint()
+    while wait(0.5) do
+        if getgenv().infsprint and Players.LocalPlayer.Character then
+            local humanoid = Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+            
+            if humanoid and humanoid.MoveDirection.Magnitude > 0 then
+                sprintEvent:FireServer("Actions", {"Sprint", "Enabled"})
             end
-            if old_index then
-                return old_index(t, k)
-            end
-            return rawget(t, k)
         end
+    end
+end
+
+
+local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()  -- RayField UI Library
+local Window = Library:CreateWindow({
+    Name = "Sword Burst 2 ",
+    LoadingTitle = "Sword Burst 2 Made by Iumentis",
+    LoadingSubtitle = "By Iumentis",
+})
+
+--refences to tab creation
+local pTab = Window:CreateTab("Player")
+
+pTab:CreateToggle({
+    Name = "Infinite Sprint",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().infsprint = Value
         
-        setmetatable(_G, mt)
-    end
-end
-
-local function safe_hook_warn()
-    pcall(function()
-        warn = function(...)
-            local args = {...}
-            local msg = table.concat(args, " ")
-            table.insert(analysis.warns, {
-                time = os.clock() - analysis.start_time,
-                message = msg,
-                trace = debug.traceback()
+        if Value then
+            sprintEvent:FireServer("Actions", {"Sprint", "Enabled"})
+            
+            -- Show notification
+            Library:Notify({
+                Title = "Sprint Enabled",
+                Content = "Infinite sprint activated",
+                Duration = 3,
+                Image = "zap"
             })
-            return original_warn(...)
-        end
-    end)
-end
-
--- Setup hooks
-safe_hook_print()
-safe_hook_warn()
-
--- 3. Monitor instance creation via event
-analysis.new_instances = {}
-analysis.instance_connections = {}
-
-local function monitor_instances()
-    local containers = {
-        game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"),
-        game:GetService("CoreGui"),
-        game:GetService("StarterGui"),
-        game
-    }
-    
-    for _, container in ipairs(containers) do
-        if container then
-            local conn = container.DescendantAdded:Connect(function(descendant)
-                table.insert(analysis.new_instances, {
-                    time = os.clock() - analysis.start_time,
-                    class = descendant.ClassName,
-                    name = descendant.Name,
-                    path = descendant:GetFullName()
-                })
-            end)
-            table.insert(analysis.instance_connections, conn)
+            spawn(infiniteSprint)
+        else
+            sprintEvent:FireServer("Actions", {"Sprint", "Disabled"})
         end
     end
-end
-
--- Start monitoring
-monitor_instances()
-
-print("Analysis setup complete. Ready for hub in 1 second...")
-wait(1)
-
--- Store for later access
-_G.SIMPLE_ANALYSIS_DATA = analysis
-
-return analysis
+})
