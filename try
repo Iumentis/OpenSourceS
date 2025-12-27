@@ -1,25 +1,8 @@
-getgenv().infsprint = false;
-
-
+warn("v1")
 --Services here
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local sprintEvent = ReplicatedStorage:WaitForChild("Event")
-local sprinting = false
-local originalSprintValue = 20
-
-
-local function infiniteSprint()
-    while wait(0.5) do
-        if getgenv().infsprint and Players.LocalPlayer.Character then
-            local humanoid = Players.LocalPlayer.Character:FindFirstChild("Humanoid")
-            
-            if humanoid and humanoid.MoveDirection.Magnitude > 0 then
-                sprintEvent:FireServer("Actions", {"Sprint", "Enabled"})
-            end
-        end
-    end
-end
 
 
 local Library = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()  -- RayField UI Library
@@ -32,25 +15,34 @@ local Window = Library:CreateWindow({
 --refences to tab creation
 local pTab = Window:CreateTab("Player")
 
-pTab:CreateToggle({
-    Name = "Infinite Sprint",
-    CurrentValue = false,
-    Callback = function(Value)
-        getgenv().infsprint = Value
-        
-        if Value then
-            sprintEvent:FireServer("Actions", {"Sprint", "Enabled"})
-            
-            -- Show notification
-            Library:Notify({
-                Title = "Sprint Enabled",
-                Content = "Infinite sprint activated",
-                Duration = 3,
-                Image = "zap"
-            })
-            spawn(infiniteSprint)
-        else
-            sprintEvent:FireServer("Actions", {"Sprint", "Disabled"})
+pTab:CreateButton({
+    Name = "Advanced Sprint (Event Hook)",
+    Callback = function()
+        for _, v in pairs(getgc()) do
+            if type(v) == "function" then
+                local info = debug.getinfo(v)
+                if info.source and (info.source:find("Sprint") or info.source:find("Mana")) then
+                    -- Hook the function to always return true for mana check
+                    local success = pcall(function()
+                        hookfunction(v, function(...)
+                            local args = {...}
+                            if args[1] == "Sprint" or (args[2] and tostring(args[2]):find("Mana")) then
+                                return true
+                            end
+                            return v(...)
+                        end)
+                    end)
+                    
+                    if success then
+                        Library:Notify({
+                            Title = "Hook Successful",
+                            Content = "Sprint mana check intercepted",
+                            Duration = 5,
+                            Image = "check-circle"
+                        })
+                    end
+                end
+            end
         end
     end
 })
