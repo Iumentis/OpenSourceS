@@ -1,5 +1,18 @@
-warn("v3")
--- UILibrary Optimized Version
+warn("v4")
+
+local Theme = {
+    Background = Color3.fromRGB(25, 25, 25),      -- Main window background
+    Panel = Color3.fromRGB(30, 30, 30),           -- Panels and work areas
+    Surface = Color3.fromRGB(35, 35, 35),         -- Surfaces (search, notifications)
+    Input = Color3.fromRGB(45, 45, 45),           -- Input fields
+    TextPrimary = Color3.fromRGB(200, 200, 200),  -- Primary text
+    TextSecondary = Color3.fromRGB(150, 150, 150), -- Secondary text
+    Accent = Color3.fromRGB(100, 150, 255),       -- Accent color (buttons, highlights)
+    SwitchOn = Color3.fromRGB(100, 150, 255),     -- Switch ON color
+    SwitchOff = Color3.fromRGB(60, 60, 60),       -- Switch OFF color
+    Toggle = Color3.fromRGB(220, 220, 220),       -- Switch toggle color
+}
+
 -- Variables
 local lib = {}
 local sections, workareas = {}, {}
@@ -46,7 +59,7 @@ end
 local function CreateTextElement(className, properties)
 	local textProps = {
 		Font = Enum.Font.Gotham,
-		TextColor3 = Color3.fromRGB(95, 95, 95),
+		TextColor3 = Theme.TextPrimary,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0
 	}
@@ -107,18 +120,18 @@ function lib:Init(config)
 		parentGui = CreateInstance("ScreenGui", {Name = "UILibrary", Parent = CoreGui})
 	end
 	
-	-- Splash Screen
-	if doSplash then
-		local splash = CreateInstance("Frame", {
-			Parent = parentGui,
-			Name = "Splash",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-			BackgroundTransparency = 0.6,
-			Position = UDim2.new(0.5, 0, 2, 0),
-			Size = UDim2.new(0, 340, 0, 340),
-			ZIndex = 40
-		})
+-- Splash Screen
+if doSplash then
+    local splash = CreateInstance("Frame", {
+        Parent = parentGui,
+        Name = "Splash",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Theme.Surface,
+        BackgroundTransparency = 0.3,
+        Position = UDim2.new(0.5, 0, 2, 0),
+        Size = UDim2.new(0, 340, 0, 340),
+        ZIndex = 40
+    })
 		
 		CreateUICorner(18).Parent = splash
 		
@@ -137,13 +150,13 @@ function lib:Init(config)
 		local gradient = CreateInstance("UIGradient", {
 			Parent = sicon,
 			Color = ColorSequence.new{
-				ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)),
-				ColorSequenceKeypoint.new(0.01, Color3.fromRGB(61, 61, 61)),
-				ColorSequenceKeypoint.new(0.47, Color3.fromRGB(41, 41, 41)),
-				ColorSequenceKeypoint.new(1.00, Color3.fromRGB(0, 0, 0))
-			},
-			Rotation = 90
-		})
+        		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(200, 200, 200)),
+        		ColorSequenceKeypoint.new(0.01, Color3.fromRGB(100, 100, 100)),
+       			ColorSequenceKeypoint.new(0.47, Color3.fromRGB(60, 60, 60)),
+       			ColorSequenceKeypoint.new(1.00, Color3.fromRGB(30, 30, 30))
+    },
+    Rotation = 90
+})
 		
 		CreateShadow(splash, 1.2).ImageTransparency = 0.4
 		
@@ -158,7 +171,7 @@ function lib:Init(config)
 		Parent = parentGui,
 		Name = "Main",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundColor3 = Theme.Background,
 		BackgroundTransparency = 0.15,
 		Position = UDim2.new(0.5, 0, 2, 0),
 		Size = UDim2.new(0, 721, 0, 584)
@@ -216,7 +229,7 @@ function lib:Init(config)
 	local search = CreateInstance("Frame", {
 		Parent = main,
 		Name = "Search",
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundColor3 = Theme.Surface,
 		Position = UDim2.new(0.026, 0, 0.096, 0),
 		Size = UDim2.new(0, 225, 0, 34)
 	})
@@ -681,7 +694,7 @@ function lib:Init(config)
 			-- Deselect all sections
 			for _, btn in ipairs(sections) do
 				btn.BackgroundTransparency = 1
-				btn.TextColor3 = Color3.fromRGB(0, 0, 0)
+				btn.TextColor3 = Theme.TextPrimary
 			end
 			
 			-- Select this section
@@ -728,7 +741,7 @@ function lib:Init(config)
 			local stroke = CreateInstance("UIStroke", {
 				Parent = button,
 				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-				Color = Color3.fromRGB(21, 103, 251),
+				Color = Theme.Accent,
 				Thickness = 1
 			})
 			
@@ -770,7 +783,7 @@ function lib:Init(config)
 			
 			local frame = CreateInstance("TextButton", {
 				Parent = container,
-				BackgroundColor3 = state and Color3.fromRGB(21, 103, 251) or Color3.fromRGB(216, 216, 216),
+				BackgroundColor3 = state and Theme.SwitchOn or Theme.SwitchOff,
 				Position = UDim2.new(0.833, 0, 0.027, 0),
 				Size = UDim2.new(0, 70, 0, 36),
 				AutoButtonColor = false,
@@ -781,7 +794,7 @@ function lib:Init(config)
 			
 			local toggle = CreateInstance("TextButton", {
 				Parent = frame,
-				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+				BackgroundColor3 = Theme.Toggle,
 				Size = UDim2.new(0, 34, 0, 34),
 				AutoButtonColor = false,
 				Text = ""
@@ -835,7 +848,7 @@ function lib:Init(config)
 				Font = Enum.Font.Gotham,
 				PlaceholderText = placeholder or "Type...",
 				Text = "",
-				TextColor3 = Color3.fromRGB(12, 12, 12),
+				TextColor3 = Theme.TextPrimary,
 				TextSize = 21,
 				TextXAlignment = Enum.TextXAlignment.Left
 			})
