@@ -1,4 +1,4 @@
-warn("v11")
+warn("v12")
 
 local Theme = {
     Background = Color3.fromRGB(25, 25, 25),      -- Main window background
@@ -650,35 +650,51 @@ if doSplash then
 	end
 	
 	function window:Section(name)
-		local sectionButton = CreateInstance("TextButton", {
-			Parent = sidebar,
-			Name = "Section_" .. #sections + 1,
-			BackgroundColor3 = Theme.Accent,
-			BackgroundTransparency = 1,
-			Size = UDim2.new(0, 226, 0, 37),
-			ZIndex = 2,
-			AutoButtonColor = false,
-			Font = Enum.Font.Gotham,
-			Text = name,
-			TextColor3 = Theme.TextPrimary,
-			TextSize = 21
-		})
-		
-		CreateUICorner(9).Parent = sectionButton
-		table.insert(sections, sectionButton)
-		
-		local workAreaContent = CreateInstance("ScrollingFrame", {
-			Parent = workArea,
-			Name = "Content_" .. #workareas + 1,
-			Active = true,
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0.039, 0, 0.096, 0),
-			Size = UDim2.new(0, 422, 0, 512),
-			ZIndex = 3,
-			CanvasSize = UDim2.new(0, 0, 0, 0),
-			ScrollBarThickness = 2,
-			Visible = false
-		})
+    local sectionButton = CreateInstance("TextButton", {
+        Parent = sidebar,
+        Name = "Section_" .. #sections + 1,
+        BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 226, 0, 37),
+        ZIndex = 2,
+        AutoButtonColor = false,
+        Font = Enum.Font.Gotham,
+        Text = name,
+        TextColor3 = Theme.TextPrimary,
+        TextSize = 21
+    })
+    
+    CreateUICorner(9).Parent = sectionButton
+    table.insert(sections, sectionButton)
+    
+    local workAreaContent = CreateInstance("ScrollingFrame", {
+        Parent = workArea,
+        Name = "Content_" .. #workareas + 1,
+        Active = true,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0.039, 0, 0.096, 0),
+        Size = UDim2.new(0, 422, 0, 512),
+        ZIndex = 3,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = Theme.TextSecondary,
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        VerticalScrollBarInset = Enum.ScrollBarInset.Always,
+        Visible = false
+    })
+    
+    local contentLayout = CreateUIListLayout({
+        Parent = workAreaContent,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 8)
+    })
+    
+    contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        workAreaContent.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
+    end)
+    
+    table.insert(workareas, workAreaContent)
 		
 		CreateUIListLayout({
 			Parent = workAreaContent,
