@@ -1,4 +1,4 @@
-warn("v5")
+warn("v6")
 
 local Theme = {
     Background = Color3.fromRGB(25, 25, 25),      -- Main window background
@@ -218,7 +218,7 @@ if doSplash then
 	local workArea = CreateInstance("Frame", {
 		Parent = main,
 		Name = "WorkArea",
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundColor3 = Theme.Panel,
 		Position = UDim2.new(0.364, 0, 0, 0),
 		Size = UDim2.new(0, 458, 0, 584)
 	})
@@ -243,7 +243,7 @@ if doSplash then
 		Position = UDim2.new(0.038, -2, 0.139, 2),
 		Size = UDim2.new(0, 24, 0, 21),
 		Image = "rbxassetid://2804603863",
-		ImageColor3 = Color3.fromRGB(95, 95, 95),
+		ImageColor3 = Theme.TextSecondary,
 		ScaleType = Enum.ScaleType.Fit
 	})
 	
@@ -256,7 +256,7 @@ if doSplash then
 		Font = Enum.Font.Gotham,
 		PlaceholderText = "Search",
 		Text = "",
-		TextColor3 = Color3.fromRGB(95, 95, 95),
+		TextColor3 = Theme.TextPrimary,
 		TextSize = 22,
 		TextXAlignment = Enum.TextXAlignment.Left
 	})
@@ -364,7 +364,7 @@ if doSplash then
 			Parent = main,
 			Name = name,
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BackgroundColor3 = Theme.Surface,
 			Position = UDim2.new(0.5, 0, 0.5, 0),
 			Size = UDim2.new(0, 304, 0, 362),
 			Visible = false,
@@ -381,7 +381,7 @@ if doSplash then
 			Size = UDim2.new(0, 100, 0, 100),
 			ZIndex = 3,
 			Image = "rbxassetid://4871684504",
-			ImageColor3 = Color3.fromRGB(95, 95, 95)
+			ImageColor3 = Theme.TextPrimary
 		})
 		
 		local titleLabel = CreateTextElement("TextLabel", {
@@ -433,7 +433,7 @@ if doSplash then
 		ZIndex = 3,
 		Font = Enum.Font.Gotham,
 		Text = "OK",
-		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextColor3 = Theme.Accent,
 		TextSize = 21
 	})
 	
@@ -451,7 +451,7 @@ if doSplash then
 		ZIndex = 3,
 		Font = Enum.Font.Gotham,
 		Text = "Sure!",
-		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextColor3 = Theme.Accent,
 		TextSize = 21
 	})
 	
@@ -467,7 +467,7 @@ if doSplash then
 		ZIndex = 3,
 		Font = Enum.Font.Gotham,
 		Text = "Go away.",
-		TextColor3 = Color3.fromRGB(95, 95, 95),
+		TextColor3 = Theme.TextPrimary,
 		TextSize = 21
 	})
 	
@@ -536,7 +536,7 @@ if doSplash then
 			Parent = parentGui,
 			Name = "TempNotification",
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BackgroundColor3 = Theme.Surface,
 			BackgroundTransparency = 0.15,
 			Position = UDim2.new(1, -250, 0.079, 0),
 			Size = UDim2.new(0, 447, 0, 117),
@@ -553,7 +553,7 @@ if doSplash then
 			Size = UDim2.new(0, 71, 0, 71),
 			ZIndex = 4,
 			Image = iconId,
-			ImageColor3 = Color3.fromRGB(95, 95, 95),
+			ImageColor3 = Theme.TextPrimary,
 			ScaleType = Enum.ScaleType.Fit
 		})
 		
@@ -652,14 +652,14 @@ if doSplash then
 		local sectionButton = CreateInstance("TextButton", {
 			Parent = sidebar,
 			Name = "Section_" .. #sections + 1,
-			BackgroundColor3 = Color3.fromRGB(21, 103, 251),
+			BackgroundColor3 = Theme.Accent,
 			BackgroundTransparency = 1,
 			Size = UDim2.new(0, 226, 0, 37),
 			ZIndex = 2,
 			AutoButtonColor = false,
 			Font = Enum.Font.Gotham,
 			Text = name,
-			TextColor3 = Color3.fromRGB(0, 0, 0),
+			TextColor3 = Theme.TextPrimary,
 			TextSize = 21
 		})
 		
@@ -716,7 +716,7 @@ if doSplash then
 				Name = "Divider",
 				Size = UDim2.new(0, 418, 0, 50),
 				Text = text,
-				TextColor3 = Color3.fromRGB(0, 0, 0),
+				TextColor3 = Theme.TextPrimary,
 				TextSize = 25,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextYAlignment = Enum.TextYAlignment.Bottom
@@ -732,7 +732,7 @@ if doSplash then
 				ZIndex = 2,
 				Font = Enum.Font.Gotham,
 				Text = name,
-				TextColor3 = Color3.fromRGB(21, 103, 251),
+				TextColor3 = Theme.Accent,
 				TextSize = 21
 			})
 			
@@ -811,7 +811,7 @@ if doSplash then
 				end
 				
 				local targetPos = state and UDim2.new(0, 35, 0, 1) or UDim2.new(0, 1, 0, 1)
-				local targetColor = state and Color3.fromRGB(21, 103, 251) or Color3.fromRGB(216, 216, 216)
+				local targetColor = state and Theme.SwitchOn or Theme.SwitchOff
 				
 				Tween(toggle, {Position = targetPos}, 0.1)
 				Tween(frame, {BackgroundColor3 = targetColor}, 0.1)
