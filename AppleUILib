@@ -1,0 +1,268 @@
+-- AppleLibrary Optimized Final
+local lib = {}
+
+-- Services
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Helper: Universal Tweening
+local function tp(ins, pos, time)
+    local info = TweenInfo.new(time, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+    TweenService:Create(ins, info, {Position = pos}):Play()
+end
+
+function lib:init(ti, dosplash, visiblekey, deleteprevious)
+    local sections = {}
+    local workareas = {}
+    local visible = true
+    local dbcooper = false
+    
+    -- UI Protection & Cleanup
+    local uiParent = (gethui and gethui()) or (syn and syn.protect_gui and CoreGui) or CoreGui
+    local existingUI = uiParent:FindFirstChild("AppleLibGui")
+    if existingUI and deleteprevious then
+        local mainFrame = existingUI:FindFirstChild("main")
+        if mainFrame then
+            tp(mainFrame, mainFrame.Position + UDim2.new(0, 0, 2, 0), 0.5)
+        end
+        Debris:AddItem(existingUI, 1)
+    end
+
+    local scrgui = Instance.new("ScreenGui")
+    scrgui.Name = "AppleLibGui"
+    if syn and syn.protect_gui then syn.protect_gui(scrgui) end
+    scrgui.Parent = uiParent
+
+    -- [[ Splash Screen Logic ]]
+    if dosplash then
+        local splash = Instance.new("Frame")
+        splash.Name = "splash"
+        splash.Parent = scrgui
+        splash.AnchorPoint = Vector2.new(0.5, 0.5)
+        splash.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        splash.BackgroundTransparency = 0.6
+        splash.Position = UDim2.new(0.5, 0, 1.5, 0)
+        splash.Size = UDim2.new(0, 340, 0, 340)
+        splash.ZIndex = 100
+        Instance.new("UICorner", splash).CornerRadius = UDim.new(0, 18)
+
+        local sicon = Instance.new("ImageLabel")
+        sicon.Parent = splash
+        sicon.AnchorPoint = Vector2.new(0.5, 0.5)
+        sicon.BackgroundTransparency = 1
+        sicon.Position = UDim2.new(0.5, 0, 0.5, 0)
+        sicon.Size = UDim2.new(0, 191, 0, 190)
+        sicon.Image = "rbxassetid://12621719043"
+        sicon.ScaleType = Enum.ScaleType.Fit
+
+        tp(splash, UDim2.new(0.5, 0, 0.5, 0), 1)
+        task.wait(2.2)
+        tp(splash, UDim2.new(0.5, 0, 1.5, 0), 1)
+        Debris:AddItem(splash, 1.1)
+    end
+
+    -- [[ Main Window Setup ]]
+    local main = Instance.new("Frame")
+    main.Name = "main"
+    main.Parent = scrgui
+    main.AnchorPoint = Vector2.new(0.5, 0.5)
+    main.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    main.BackgroundTransparency = 0.15
+    main.Position = UDim2.new(0.5, 0, 1.5, 0)
+    main.Size = UDim2.new(0, 721, 0, 584)
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 18)
+
+    -- Dragging Logic
+    local dragging, dragInput, dragStart, startPos
+    main.InputBegan:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+            dragging = true
+            dragStart = input.Position
+            startPos = main.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- Sidebar & Workarea
+    local workarea = Instance.new("Frame", main)
+    workarea.Name = "workarea"
+    workarea.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    workarea.Position = UDim2.new(0.364, 0, 0, 0)
+    workarea.Size = UDim2.new(0, 458, 0, 584)
+    Instance.new("UICorner", workarea).CornerRadius = UDim.new(0, 18)
+
+    local hider = Instance.new("Frame", workarea)
+    hider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    hider.BorderSizePixel = 0
+    hider.Size = UDim2.new(0, 18, 1, 0)
+
+    local sidebar = Instance.new("ScrollingFrame", main)
+    sidebar.Name = "sidebar"
+    sidebar.BackgroundTransparency = 1
+    sidebar.BorderSizePixel = 0
+    sidebar.Position = UDim2.new(0.025, 0, 0.182, 0)
+    sidebar.Size = UDim2.new(0, 233, 0, 463)
+    sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sidebar.CanvasSize = UDim2.new(0,0,0,0)
+    sidebar.ScrollBarThickness = 2
+
+    local sidebarLayout = Instance.new("UIListLayout", sidebar)
+    sidebarLayout.Padding = UDim.new(0, 5)
+
+    -- macOS Buttons
+    local btnContainer = Instance.new("Frame", main)
+    btnContainer.Size = UDim2.new(0, 105, 0, 57)
+    btnContainer.BackgroundTransparency = 1
+    local btnLayout = Instance.new("UIListLayout", btnContainer)
+    btnLayout.FillDirection = "Horizontal"
+    btnLayout.HorizontalAlignment = "Center"
+    btnLayout.VerticalAlignment = "Center"
+    btnLayout.Padding = UDim.new(0, 10)
+
+    local function createMac(col, cb)
+        local b = Instance.new("TextButton", btnContainer)
+        b.Size = UDim2.new(0, 12, 0, 12)
+        b.BackgroundColor3 = col
+        b.Text = ""
+        Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+        if cb then b.MouseButton1Click:Connect(cb) end
+        return b
+    end
+
+    createMac(Color3.fromRGB(254, 94, 86), function() scrgui:Destroy() end)
+    local minBtn = createMac(Color3.fromRGB(255, 189, 46))
+    createMac(Color3.fromRGB(39, 200, 63))
+
+    -- Title
+    local titleLbl = Instance.new("TextLabel", main)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Position = UDim2.new(0.389, 0, 0.035, 0)
+    titleLbl.Size = UDim2.new(0, 400, 0, 15)
+    titleLbl.Font = "GothamBold"
+    titleLbl.Text = ti or "AppleLib"
+    titleLbl.TextSize = 24
+    titleLbl.TextXAlignment = "Left"
+
+    -- Search Logic
+    local searchFrame = Instance.new("Frame", main)
+    searchFrame.Size = UDim2.new(0, 225, 0, 34)
+    searchFrame.Position = UDim2.new(0.025, 0, 0.096, 0)
+    searchFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Instance.new("UICorner", searchFrame).CornerRadius = UDim.new(0, 9)
+
+    local searchBox = Instance.new("TextBox", searchFrame)
+    searchBox.Size = UDim2.new(0, 176, 1, 0)
+    searchBox.Position = UDim2.new(0.18, 0, 0, 0)
+    searchBox.BackgroundTransparency = 1
+    searchBox.PlaceholderText = "Search"
+    searchBox.Text = ""
+    searchBox.TextSize = 16
+    searchBox.Font = "Gotham"
+    searchBox.TextXAlignment = "Left"
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local input = searchBox.Text:upper()
+        for _, b in ipairs(sidebar:GetChildren()) do
+            if b:IsA("TextButton") then
+                b.Visible = (input == "" or b.Text:upper():find(input)) ~= nil
+            end
+        end
+    end)
+
+    -- Window Methods
+    local window = {}
+
+    function window:Toggle()
+        if dbcooper then return end
+        visible = not visible
+        dbcooper = true
+        tp(main, visible and UDim2.new(0.5, 0, 0.5, 0) or UDim2.new(0.5, 0, 1.5, 0), 0.5)
+        task.delay(0.5, function() dbcooper = false end)
+    end
+
+    if visiblekey then
+        minBtn.MouseButton1Click:Connect(function() window:Toggle() end)
+        UserInputService.InputBegan:Connect(function(i, p)
+            if not p and i.KeyCode == visiblekey then window:Toggle() end
+        end)
+    end
+
+    function window:Section(name)
+        local sBtn = Instance.new("TextButton", sidebar)
+        sBtn.Size = UDim2.new(0, 226, 0, 37)
+        sBtn.BackgroundTransparency = 1
+        sBtn.BackgroundColor3 = Color3.fromRGB(21, 103, 251)
+        sBtn.Font = "Gotham"
+        sBtn.Text = name
+        sBtn.TextSize = 18
+        Instance.new("UICorner", sBtn).CornerRadius = UDim.new(0, 9)
+        table.insert(sections, sBtn)
+
+        local area = Instance.new("ScrollingFrame", workarea)
+        area.Size = UDim2.new(0, 422, 0, 512)
+        area.Position = UDim2.new(0.04, 0, 0.1, 0)
+        area.BackgroundTransparency = 1
+        area.BorderSizePixel = 0
+        area.Visible = false
+        area.AutomaticCanvasSize = "Y"
+        area.CanvasSize = UDim2.new(0,0,0,0)
+        Instance.new("UIListLayout", area).Padding = UDim.new(0, 5)
+        table.insert(workareas, area)
+
+        local sec = {}
+        function sec:Select()
+            for i, v in ipairs(sections) do v.BackgroundTransparency = 1 v.TextColor3 = Color3.fromRGB(0,0,0) end
+            for i, v in ipairs(workareas) do v.Visible = false end
+            sBtn.BackgroundTransparency = 0
+            sBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            area.Visible = true
+        end
+
+        function sec:Switch(label, def, cb)
+            local state = def
+            local f = Instance.new("TextLabel", area)
+            f.Size = UDim2.new(0, 418, 0, 37)
+            f.BackgroundTransparency = 1
+            f.Text = "  "..label
+            f.Font = "Gotham"
+            f.TextXAlignment = "Left"
+            f.TextSize = 18
+
+            local b = Instance.new("TextButton", f)
+            b.Position = UDim2.new(0.83, 0, 0.1, 0)
+            b.Size = UDim2.new(0, 60, 0, 30)
+            b.Text = ""
+            Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+
+            local d = Instance.new("Frame", b)
+            d.Size = UDim2.new(0, 26, 0, 26)
+            Instance.new("UICorner", d).CornerRadius = UDim.new(1, 0)
+
+            local function up()
+                b.BackgroundColor3 = state and Color3.fromRGB(21, 103, 251) or Color3.fromRGB(200, 200, 200)
+                d:TweenPosition(state and UDim2.new(0.55, 0, 0.1, 0) or UDim2.new(0.05, 0, 0.1, 0), "Out", "Sine", 0.15)
+                if cb then cb(state) end
+            end
+            b.MouseButton1Click:Connect(function() state = not state up() end)
+            up()
+        end
+
+        sBtn.MouseButton1Click:Connect(function() sec:Select() end)
+        return sec
+    end
+
+    tp(main, UDim2.new(0.5, 0, 0.5, 0), 1)
+    return window
+end
+
+return lib
