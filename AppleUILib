@@ -1,4 +1,4 @@
-warn("v8")
+warn("v9")
 
 local Theme = {
     Background = Color3.fromRGB(25, 25, 25),      -- Main window background
@@ -518,13 +518,12 @@ if doSplash then
 		end
 	end)
 	
--- REMOVE THIS FUNCTION:
--- function window:GreenButton(callback)
---     if self.greenButtonConnection then
---         self.greenButtonConnection:Disconnect()
---     end
---     self.greenButtonConnection = resizeBtn.MouseButton1Click:Connect(callback)
--- end
+function window:GreenButton(callback)
+if self.greenButtonConnection then
+self.greenButtonConnection:Disconnect()
+end
+self.greenButtonConnection = resizeBtn.MouseButton1Click:Connect(callback)
+end
 	
 	function window:TempNotify(titleText, descriptionText, iconId)
 		-- Position existing notifications
