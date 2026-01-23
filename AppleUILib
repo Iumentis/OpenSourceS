@@ -1,4 +1,4 @@
-warn("v10")
+warn("v11")
 
 local Theme = {
     Background = Color3.fromRGB(25, 25, 25),      -- Main window background
@@ -335,16 +335,17 @@ if doSplash then
 	})
 	
 	CreateUICorner(8).Parent = minimizeBtn
-	
-local resizeBtn = CreateInstance("TextButton", {
-    Parent = controls,
-    Name = "Resize",
-     BackgroundColor3 = Color3.fromRGB(39, 200, 63),
-    Size = UDim2.new(0, 16, 0, 16),
-    AutoButtonColor = false,
-    Text = ""
-})
-CreateUICorner(8).Parent = resizeBtn
+
+-- local resizeBtn = CreateInstance("TextButton", {
+--     Parent = controls,
+--     Name = "Resize",
+--     BackgroundColor3 = Color3.fromRGB(39, 200, 63),
+--     Size = UDim2.new(0, 16, 0, 16),
+--     AutoButtonColor = false,
+--     Text = ""
+-- })
+-- 
+-- CreateUICorner(8).Parent = resizeBtn
 
 	
 	-- Title
@@ -516,13 +517,13 @@ CreateUICorner(8).Parent = resizeBtn
 			searchConnection:Disconnect()
 		end
 	end)
-	
-function window:GreenButton(callback)
-if self.greenButtonConnection then
-self.greenButtonConnection:Disconnect()
-end
-self.greenButtonConnection = resizeBtn.MouseButton1Click:Connect(callback)
-end
+
+-- function window:GreenButton(callback)
+--     if self.greenButtonConnection then
+--         self.greenButtonConnection:Disconnect()
+--     end
+--     self.greenButtonConnection = resizeBtn.MouseButton1Click:Connect(callback)
+-- end
 	
 	function window:TempNotify(titleText, descriptionText, iconId)
 		-- Position existing notifications
