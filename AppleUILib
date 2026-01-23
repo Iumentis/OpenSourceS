@@ -1,4 +1,4 @@
-warn("v4")
+warn("v5")
 
 local Theme = {
     Background = Color3.fromRGB(25, 25, 25),      -- Main window background
@@ -831,12 +831,12 @@ if doSplash then
 				TextXAlignment = Enum.TextXAlignment.Left
 			})
 			
-			local frame = CreateInstance("Frame", {
-				Parent = container,
-				BackgroundColor3 = Color3.fromRGB(240, 240, 240),
-				Position = UDim2.new(0.442, 0, 0.027, 0),
-				Size = UDim2.new(0, 233, 0, 34)
-			})
+local frame = CreateInstance("Frame", {
+    Parent = container,
+    BackgroundColor3 = Theme.Input,
+    Position = UDim2.new(0.442, 0, 0.027, 0),
+    Size = UDim2.new(0, 233, 0, 34)
+})
 			
 			CreateUICorner(9).Parent = frame
 			
