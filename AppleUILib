@@ -880,6 +880,178 @@ local frame = CreateInstance("Frame", {
 		sectionButton.MouseButton1Click:Connect(function()
 			section:Select()
 		end)
+
+function section:ColorPicker(name, defaultColor, callback)
+    local container = CreateTextElement("TextLabel", {
+        Parent = workAreaContent,
+        Name = "ColorPickerContainer",
+        Size = UDim2.new(0, 418, 0, 37),
+        Text = name,
+        TextSize = 21,
+        TextXAlignment = Enum.TextXAlignment.Left
+    })
+    
+    -- Color preview button
+    local colorPreview = CreateInstance("TextButton", {
+        Parent = container,
+        BackgroundColor3 = defaultColor or Theme.Accent,
+        Position = UDim2.new(0.75, 0, 0.1, 0),
+        Size = UDim2.new(0, 80, 0, 25),
+        AutoButtonColor = false,
+        Text = "",
+        ZIndex = 2
+    })
+    
+    CreateUICorner(5).Parent = colorPreview
+    
+    -- Color value text
+    local colorText = CreateInstance("TextBox", {
+        Parent = container,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0.75, 0, 0.65, 0),
+        Size = UDim2.new(0, 80, 0, 12),
+        Font = Enum.Font.Gotham,
+        Text = tostring(defaultColor or Theme.Accent),
+        TextColor3 = Theme.TextSecondary,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        ClearTextOnFocus = false
+    })
+    
+    -- RGB sliders container (initially hidden)
+    local slidersContainer = CreateInstance("Frame", {
+        Parent = workAreaContent,
+        Name = "SlidersContainer",
+        BackgroundColor3 = Theme.Surface,
+        Size = UDim2.new(0, 418, 0, 120),
+        Visible = false
+    })
+    
+    CreateUICorner(9).Parent = slidersContainer
+    
+    -- RGB Sliders
+    local rValue = math.round((defaultColor or Theme.Accent).R * 255)
+    local gValue = math.round((defaultColor or Theme.Accent).G * 255)
+    local bValue = math.round((defaultColor or Theme.Accent).B * 255)
+    
+    local function CreateSlider(label, value, yPosition)
+        local sliderLabel = CreateTextElement("TextLabel", {
+            Parent = slidersContainer,
+            Position = UDim2.new(0.05, 0, yPosition, 0),
+            Size = UDim2.new(0, 50, 0, 20),
+            Text = label,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left
+        })
+        
+        local valueText = CreateTextElement("TextLabel", {
+            Parent = slidersContainer,
+            Position = UDim2.new(0.25, 0, yPosition, 0),
+            Size = UDim2.new(0, 40, 0, 20),
+            Text = tostring(value),
+            TextSize = 14
+        })
+        
+        local slider = CreateInstance("Frame", {
+            Parent = slidersContainer,
+            BackgroundColor3 = Theme.Input,
+            Position = UDim2.new(0.4, 0, yPosition + 0.1, 0),
+            Size = UDim2.new(0, 200, 0, 10)
+        })
+        
+        CreateUICorner(5).Parent = slider
+        
+        local sliderFill = CreateInstance("Frame", {
+            Parent = slider,
+            BackgroundColor3 = Color3.fromRGB(255 * (label == "R" and 1 or 0), 
+                                              255 * (label == "G" and 1 or 0), 
+                                              255 * (label == "B" and 1 or 0)),
+            Size = UDim2.new(value / 255, 0, 1, 0)
+        })
+        
+        CreateUICorner(5).Parent = sliderFill
+        
+        local sliderButton = CreateInstance("TextButton", {
+            Parent = slider,
+            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+            Position = UDim2.new(value / 255, -5, 0, -2),
+            Size = UDim2.new(0, 10, 0, 14),
+            AutoButtonColor = false,
+            Text = ""
+        })
+        
+        CreateUICorner(7).Parent = sliderButton
+        
+        -- Slider dragging logic
+        local draggingSlider = false
+        
+        local function UpdateSlider(input)
+            if not draggingSlider then return end
+            
+            local sliderAbsX = slider.AbsolutePosition.X
+            local sliderWidth = slider.AbsoluteSize.X
+            local mouseX = input.Position.X
+            
+            local relativeX = math.clamp(mouseX - sliderAbsX, 0, sliderWidth)
+            local percentage = relativeX / sliderWidth
+            local newValue = math.round(percentage * 255)
+            
+            valueText.Text = tostring(newValue)
+            sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+            sliderButton.Position = UDim2.new(percentage, -5, 0, -2)
+            
+            -- Update specific color value
+            if label == "R" then rValue = newValue
+            elseif label == "G" then gValue = newValue
+            elseif label == "B" then bValue = newValue end
+            
+            -- Update color preview
+            local newColor = Color3.fromRGB(rValue, gValue, bValue)
+            colorPreview.BackgroundColor3 = newColor
+            colorText.Text = string.format("R:%d G:%d B:%d", rValue, gValue, bValue)
+            
+            if callback then
+                callback(newColor)
+            end
+        end
+        
+        sliderButton.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingSlider = true
+            end
+        end)
+        
+        slider.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingSlider = true
+                UpdateSlider(input)
+            end
+        end)
+        
+        UIS.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement and draggingSlider then
+                UpdateSlider(input)
+            end
+        end)
+        
+        UIS.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingSlider = false
+            end
+        end)
+        
+        return {Slider = slider, ValueText = valueText, Fill = sliderFill, Button = sliderButton}
+    end
+    
+    local rSlider = CreateSlider("R", rValue, 0.1)
+    local gSlider = CreateSlider("G", gValue, 0.4)
+    local bSlider = CreateSlider("B", bValue, 0.7)
+    
+    -- Toggle sliders visibility
+    colorPreview.MouseButton1Click:Connect(function()
+        slidersContainer.Visible = not slidersContainer.Visible
+    })
+end
 		
 		-- Auto-select first section
 		if #sections == 1 then
