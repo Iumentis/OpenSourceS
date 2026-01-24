@@ -1,4 +1,4 @@
-warn("v12")
+warn("v15")
 
 local Theme = {
     Background = Color3.fromRGB(25, 25, 25),      -- Main window background
@@ -911,34 +911,46 @@ function section:ColorPicker(name, defaultColor, callback)
         Position = UDim2.new(0.75, 0, 0.65, 0),
         Size = UDim2.new(0, 80, 0, 12),
         Font = Enum.Font.Gotham,
-        Text = tostring(defaultColor or Theme.Accent),
+        Text = string.format("R:%d G:%d B:%d", 
+            math.round((defaultColor or Theme.Accent).R * 255),
+            math.round((defaultColor or Theme.Accent).G * 255),
+            math.round((defaultColor or Theme.Accent).B * 255)),
         TextColor3 = Theme.TextSecondary,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Center,
         ClearTextOnFocus = false
     })
     
-    -- RGB sliders container (initially hidden)
-    local slidersContainer = CreateInstance("Frame", {
-        Parent = workAreaContent,
-        Name = "SlidersContainer",
-        BackgroundColor3 = Theme.Surface,
-        Size = UDim2.new(0, 418, 0, 120),
-        Visible = false
-    })
-    
-    CreateUICorner(9).Parent = slidersContainer
-    
-    -- RGB Sliders
+    -- RGB values
     local rValue = math.round((defaultColor or Theme.Accent).R * 255)
     local gValue = math.round((defaultColor or Theme.Accent).G * 255)
     local bValue = math.round((defaultColor or Theme.Accent).B * 255)
     
-    local function CreateSlider(label, value, yPosition)
+    -- RGB sliders container (initially hidden)
+    local slidersContainer = CreateInstance("Frame", {
+        Parent = workAreaContent,
+        Name = "SlidersContainer_" .. name:gsub("%s+", ""),
+        BackgroundColor3 = Theme.Surface,
+        Size = UDim2.new(0, 418, 0, 120),
+        Visible = false,
+        LayoutOrder = container.LayoutOrder + 1  -- Make sure it appears below the picker
+    })
+    
+    CreateUICorner(9).Parent = slidersContainer
+    
+    -- Add a stroke for better visibility
+    local containerStroke = CreateInstance("UIStroke", {
+        Parent = slidersContainer,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Color = Theme.TextSecondary,
+        Thickness = 1
+    })
+    
+    local function CreateSlider(label, value, yPosition, color)
         local sliderLabel = CreateTextElement("TextLabel", {
             Parent = slidersContainer,
             Position = UDim2.new(0.05, 0, yPosition, 0),
-            Size = UDim2.new(0, 50, 0, 20),
+            Size = UDim2.new(0, 20, 0, 20),
             Text = label,
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left
@@ -946,73 +958,60 @@ function section:ColorPicker(name, defaultColor, callback)
         
         local valueText = CreateTextElement("TextLabel", {
             Parent = slidersContainer,
-            Position = UDim2.new(0.25, 0, yPosition, 0),
-            Size = UDim2.new(0, 40, 0, 20),
+            Position = UDim2.new(0.15, 0, yPosition, 0),
+            Size = UDim2.new(0, 30, 0, 20),
             Text = tostring(value),
-            TextSize = 14
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Center
         })
         
-        local slider = CreateInstance("Frame", {
+        local sliderTrack = CreateInstance("Frame", {
             Parent = slidersContainer,
             BackgroundColor3 = Theme.Input,
-            Position = UDim2.new(0.4, 0, yPosition + 0.1, 0),
-            Size = UDim2.new(0, 200, 0, 10)
+            Position = UDim2.new(0.25, 0, yPosition + 0.1, 0),
+            Size = UDim2.new(0, 240, 0, 8)
         })
         
-        CreateUICorner(5).Parent = slider
+        CreateUICorner(4).Parent = sliderTrack
         
         local sliderFill = CreateInstance("Frame", {
-            Parent = slider,
-            BackgroundColor3 = Color3.fromRGB(255 * (label == "R" and 1 or 0), 
-                                              255 * (label == "G" and 1 or 0), 
-                                              255 * (label == "B" and 1 or 0)),
+            Parent = sliderTrack,
+            BackgroundColor3 = color,
             Size = UDim2.new(value / 255, 0, 1, 0)
         })
         
-        CreateUICorner(5).Parent = sliderFill
+        CreateUICorner(4).Parent = sliderFill
         
         local sliderButton = CreateInstance("TextButton", {
-            Parent = slider,
+            Parent = sliderTrack,
             BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-            Position = UDim2.new(value / 255, -5, 0, -2),
-            Size = UDim2.new(0, 10, 0, 14),
+            Position = UDim2.new(value / 255, -8, 0, -3),
+            Size = UDim2.new(0, 14, 0, 14),
             AutoButtonColor = false,
-            Text = ""
+            Text = "",
+            ZIndex = 2
         })
         
         CreateUICorner(7).Parent = sliderButton
         
-        -- Slider dragging logic
         local draggingSlider = false
         
         local function UpdateSlider(input)
             if not draggingSlider then return end
             
-            local sliderAbsX = slider.AbsolutePosition.X
-            local sliderWidth = slider.AbsoluteSize.X
+            local trackAbsX = sliderTrack.AbsolutePosition.X
+            local trackWidth = sliderTrack.AbsoluteSize.X
             local mouseX = input.Position.X
             
-            local relativeX = math.clamp(mouseX - sliderAbsX, 0, sliderWidth)
-            local percentage = relativeX / sliderWidth
+            local relativeX = math.clamp(mouseX - trackAbsX, 0, trackWidth)
+            local percentage = relativeX / trackWidth
             local newValue = math.round(percentage * 255)
             
             valueText.Text = tostring(newValue)
             sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
-            sliderButton.Position = UDim2.new(percentage, -5, 0, -2)
+            sliderButton.Position = UDim2.new(percentage, -8, 0, -3)
             
-            -- Update specific color value
-            if label == "R" then rValue = newValue
-            elseif label == "G" then gValue = newValue
-            elseif label == "B" then bValue = newValue end
-            
-            -- Update color preview
-            local newColor = Color3.fromRGB(rValue, gValue, bValue)
-            colorPreview.BackgroundColor3 = newColor
-            colorText.Text = string.format("R:%d G:%d B:%d", rValue, gValue, bValue)
-            
-            if callback then
-                callback(newColor)
-            end
+            return newValue, percentage
         end
         
         sliderButton.InputBegan:Connect(function(input)
@@ -1021,7 +1020,7 @@ function section:ColorPicker(name, defaultColor, callback)
             end
         end)
         
-        slider.InputBegan:Connect(function(input)
+        sliderTrack.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
                 draggingSlider = true
                 UpdateSlider(input)
@@ -1040,17 +1039,78 @@ function section:ColorPicker(name, defaultColor, callback)
             end
         end)
         
-        return {Slider = slider, ValueText = valueText, Fill = sliderFill, Button = sliderButton}
+        return {Track = sliderTrack, ValueText = valueText, Fill = sliderFill, Button = sliderButton}
     end
     
-    local rSlider = CreateSlider("R", rValue, 0.1)
-    local gSlider = CreateSlider("G", gValue, 0.4)
-    local bSlider = CreateSlider("B", bValue, 0.7)
+    -- Create sliders with appropriate colors
+    local rSlider = CreateSlider("R", rValue, 0.1, Color3.fromRGB(255, 0, 0))
+    local gSlider = CreateSlider("G", gValue, 0.4, Color3.fromRGB(0, 255, 0))
+    local bSlider = CreateSlider("B", bValue, 0.7, Color3.fromRGB(0, 0, 255))
+    
+    -- Function to update color from sliders
+    local function UpdateColor()
+        local newColor = Color3.fromRGB(rValue, gValue, bValue)
+        colorPreview.BackgroundColor3 = newColor
+        colorText.Text = string.format("R:%d G:%d B:%d", rValue, gValue, bValue)
+        
+        if callback then
+            callback(newColor)
+        end
+    end
+    
+    -- Connect slider updates
+    local function SetupSliderUpdate(slider, setValueFunc)
+        slider.Track.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                local newValue = math.round((input.Position.X - slider.Track.AbsolutePosition.X) / slider.Track.AbsoluteSize.X * 255)
+                newValue = math.clamp(newValue, 0, 255)
+                setValueFunc(newValue)
+                UpdateColor()
+            end
+        end)
+    end
+    
+    SetupSliderUpdate(rSlider, function(val) rValue = val end)
+    SetupSliderUpdate(gSlider, function(val) gValue = val end)
+    SetupSliderUpdate(bSlider, function(val) bValue = val end)
     
     -- Toggle sliders visibility
+    local isExpanded = false
     colorPreview.MouseButton1Click:Connect(function()
-        slidersContainer.Visible = not slidersContainer.Visible
-    })
+        isExpanded = not isExpanded
+        slidersContainer.Visible = isExpanded
+        
+        -- Animate the expansion
+        if isExpanded then
+            slidersContainer.Size = UDim2.new(0, 418, 0, 0)
+            Tween(slidersContainer, {Size = UDim2.new(0, 418, 0, 120)}, 0.3)
+        else
+            Tween(slidersContainer, {Size = UDim2.new(0, 418, 0, 0)}, 0.3)
+            task.delay(0.3, function()
+                if not isExpanded then
+                    slidersContainer.Visible = false
+                end
+            end)
+        end
+    end)
+    
+    return {
+        GetColor = function()
+            return Color3.fromRGB(rValue, gValue, bValue)
+        end,
+        SetColor = function(newColor)
+            rValue = math.round(newColor.R * 255)
+            gValue = math.round(newColor.G * 255)
+            bValue = math.round(newColor.B * 255)
+            colorPreview.BackgroundColor3 = newColor
+            colorText.Text = string.format("R:%d G:%d B:%d", rValue, gValue, bValue)
+            
+            -- Update slider positions (you'd need to store slider references for this)
+            if callback then
+                callback(newColor)
+            end
+        end
+    }
 end
 		
 		-- Auto-select first section
