@@ -312,6 +312,7 @@ return (function()
             end
             X = X .. j(F(G, A, v))
         end
+        writefile("Eclipse_Cracked_Final.lua", X)
         return X
     end
     local A = z(d)
