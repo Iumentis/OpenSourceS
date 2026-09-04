@@ -1,4 +1,4 @@
-warn("V2")
+print("V3")
 if getgenv().SimpleSpyExecuted and type(getgenv().SimpleSpyShutdown) == "function" then
     getgenv().SimpleSpyShutdown()
 end
