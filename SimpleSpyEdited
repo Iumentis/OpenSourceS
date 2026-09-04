@@ -1206,7 +1206,15 @@ local typeofv2sfunctions = {
             return "newproxy(false)"
         end
         return "newproxy(true)"
-    end
+    end,
+buffer = function(v)
+        local len = buffer.len(v)
+        local bytes = {}
+        for i = 0, len - 1 do
+            bytes[#bytes+1] = string.format("\\%03d", buffer.readu8(v, i))
+        end
+        return 'buffer.fromstring("' .. table.concat(bytes) .. '")'
+    end,
 }
 
 local typev2sfunctions = {
