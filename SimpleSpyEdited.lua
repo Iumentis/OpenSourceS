@@ -1,4 +1,6 @@
-print("V3")
+--!native
+--50/50 this breaks but it's a beta for a reason!
+
 if getgenv().SimpleSpyExecuted and type(getgenv().SimpleSpyShutdown) == "function" then
     getgenv().SimpleSpyShutdown()
 end
@@ -81,7 +83,7 @@ local hookmetamethod = hookmetamethod or (makewriteable and makereadonly and get
         return hookfunction(old[metamethod],func)
     else
         local oldmetamethod = old[metamethod]
-        makewritable(old)
+        makewriteable(old)
         old[metamethod] = func
         makereadonly(old)
         return oldmetamethod
@@ -115,7 +117,7 @@ local function Search(logtable,tbl)
 end
 
 local function IsCyclicTable(tbl)
-	local checkedtables = {}
+    local checkedtables = {}
 
     local function SearchTable(tbl)
         table.insert(checkedtables,tbl)
@@ -127,7 +129,7 @@ local function IsCyclicTable(tbl)
         end
     end
 
-	return SearchTable(tbl)
+    return SearchTable(tbl)
 end
 
 local function deepclone(args: table, copies: table): table
@@ -153,25 +155,25 @@ local function deepclone(args: table, copies: table): table
 end
 
 local function rawtostring(userdata)
-	if type(userdata) == "table" or typeof(userdata) == "userdata" then
-		local rawmetatable = getrawmetatable(userdata)
-		local cachedstring = rawmetatable and rawget(rawmetatable, "__tostring")
+    if type(userdata) == "table" or typeof(userdata) == "userdata" then
+        local rawmetatable = getrawmetatable(userdata)
+        local cachedstring = rawmetatable and rawget(rawmetatable, "__tostring")
 
-		if cachedstring then
+        if cachedstring then
             local wasreadonly = isreadonly(rawmetatable)
             if wasreadonly then
                 makewritable(rawmetatable)
             end
-			rawset(rawmetatable, "__tostring", nil)
-			local safestring = tostring(userdata)
-			rawset(rawmetatable, "__tostring", cachedstring)
+            rawset(rawmetatable, "__tostring", nil)
+            local safestring = tostring(userdata)
+            rawset(rawmetatable, "__tostring", cachedstring)
             if wasreadonly then
                 makereadonly(rawmetatable)
             end
-			return safestring
-		end
-	end
-	return tostring(userdata)
+            return safestring
+        end
+    end
+    return tostring(userdata)
 end
 
 local CoreGui = SafeGetService("CoreGui")
@@ -182,7 +184,7 @@ local TweenService = SafeGetService("TweenService")
 local ContentProvider = SafeGetService("ContentProvider")
 local TextService = SafeGetService("TextService")
 local http = SafeGetService("HttpService")
-local GuiInset = game:GetService("GuiService"):GetGuiInset() :: Vector2
+local GuiInset = game:GetService("GuiService"):GetGuiInset() :: Vector2 -- pulled from rewrite
 
 local function jsone(str) return http:JSONEncode(str) end
 local function jsond(str)
@@ -192,7 +194,7 @@ end
 
 function ErrorPrompt(Message,state)
     if getrenv then
-        local ErrorPrompt = getrenv().require(CoreGui:WaitForChild("RobloxGui"):WaitForChild("Modules"):WaitForChild("ErrorPrompt"))
+        local ErrorPrompt = getrenv().require(CoreGui:WaitForChild("RobloxGui"):WaitForChild("Modules"):WaitForChild("ErrorPrompt")) -- File can be located in your roblox folder (C:\Users\%Username%\AppData\Local\Roblox\Versions\whateverversionitis\ExtraContent\scripts\CoreScripts\Modules)
         local prompt = ErrorPrompt.new("Default",{HideErrorCode = true})
         local ErrorStoarge = Create("ScreenGui",{Parent = CoreGui,ResetOnSpawn = false})
         local thread = state and running()
@@ -219,6 +221,7 @@ function ErrorPrompt(Message,state)
 end
 
 local Highlight = (isfile and loadfile and isfile("Highlight.lua") and loadfile("Highlight.lua")()) or loadstring(game:HttpGet("https://raw.githubusercontent.com/78n/SimpleSpy/main/Highlight.lua"))()
+local LazyFix = loadstring(game:HttpGet("https://raw.githubusercontent.com/78n/Roblox/refs/heads/main/Lua/Libraries/DataToCode/DataToCode.luau"))() -- Very lazy fix as I'm legit just pasting it from the rewrite
 
 local SimpleSpy3 = Create("ScreenGui",{ResetOnSpawn = false})
 local Storage = Create("Folder",{})
@@ -244,79 +247,39 @@ local TextLabel = Create("TextLabel",{Parent = ToolTip,BackgroundColor3 = Color3
 
 -------------------------------------------------------------------------------
 
-local function decodeByteNetBuffer(buf)
-    if typeof(buf) ~= "buffer" then return nil end
-    local len = buffer.len(buf)
-    if len < 2 then return nil end
-    local flag = buffer.readu8(buf, 0)
-    local id = buffer.readu8(buf, 1)
-
-    local success, packetIDs = pcall(require, game:GetService("ReplicatedStorage").Modules.ByteNet.packets.packetIDs)
-    if not success then return nil end
-    local success2, Packets = pcall(require, game:GetService("ReplicatedStorage").Modules.Packets)
-    if not success2 then return nil end
-
-    local packetObj = packetIDs[id]
-    if not packetObj then return nil end
-
-    local name = nil
-    for k, v in pairs(Packets) do
-        if v == packetObj then
-            name = k
-            break
-        end
-    end
-    if not name then name = "Unknown" end
-
-    local reader = packetObj.reader
-    if not reader then return nil end
-
-    local success3, data = pcall(reader, buf, 2)
-    if not success3 then return nil end
-
-    return {
-        name = name,
-        id = id,
-        flag = flag,
-        data = data,
-        size = len
-    }
-end
-
-local function formatDecoded(decoded)
-    local lines = {string.format("📦 %s (ID: %d, Flag: %d, Size: %d bytes)",
-        decoded.name, decoded.id, decoded.flag, decoded.size)}
-    for k, v in pairs(decoded.data) do
-        if type(v) == "table" then
-            lines[#lines+1] = string.format("  %s: { ... }", k)
-        elseif type(v) == "Vector3" then
-            lines[#lines+1] = string.format("  %s: Vector3(%.2f, %.2f, %.2f)", k, v.X, v.Y, v.Z)
-        elseif type(v) == "CFrame" then
-            lines[#lines+1] = string.format("  %s: CFrame(%.2f, %.2f, %.2f)", k, v.Position.X, v.Position.Y, v.Position.Z)
-        else
-            lines[#lines+1] = string.format("  %s: %s", k, tostring(v))
-        end
-    end
-    return table.concat(lines, "\n")
-end
-
 local selectedColor = Color3.new(0.321569, 0.333333, 1)
 local deselectedColor = Color3.new(0.8, 0.8, 0.8)
+--- So things are descending
 local layoutOrderNum = 999999999
+--- Whether or not the gui is closing
 local mainClosing = false
+--- Whether or not the gui is closed (defaults to false)
 local closed = false
+--- Whether or not the sidebar is closing
 local sideClosing = false
+--- Whether or not the sidebar is closed (defaults to true but opens automatically on remote selection)
 local sideClosed = false
+--- Whether or not the code box is maximized (defaults to false)
 local maximized = false
+--- The event logs to be read from
 local logs = {}
+--- The event currently selected.Log (defaults to nil)
 local selected = nil
+--- The blacklist (can be a string name or the Remote Instance)
 local blacklist = {}
+--- The block list (can be a string name or the Remote Instance)
 local blocklist = {}
+--- Whether or not to add getNil function
 local getNil = false
+--- Array of remotes (and original functions) connected to
 local connectedRemotes = {}
+--- True = hookfunction, false = namecall
 local toggle = false
+--- used to prevent recursives
 local prevTables = {}
+--- holds logs (for deletion)
 local remoteLogs = {}
+--- used for hookfunction
 getgenv().SIMPLESPYCONFIG_MaxRemotes = 300
 local indent = 4
 local scheduled = {}
@@ -330,9 +293,11 @@ local codebox
 local p
 local getnilrequired = false
 
+-- autoblock variables
 local history = {}
 local excluding = {}
 
+-- if mouse inside gui
 local mouseInGui = false
 
 local connections = {}
@@ -342,21 +307,23 @@ local running_threads = {}
 local originalnamecall
 
 local remoteEvent = Instance.new("RemoteEvent",Storage)
+local unreliableRemoteEvent = Instance.new("UnreliableRemoteEvent")
 local remoteFunction = Instance.new("RemoteFunction",Storage)
 local NamecallHandler = Instance.new("BindableEvent",Storage)
 local IndexHandler = Instance.new("BindableEvent",Storage)
-local GetDebugIdHandler = Instance.new("BindableFunction",Storage)
+local GetDebugIdHandler = Instance.new("BindableFunction",Storage) --Thanks engo for the idea of using BindableFunctions
 
 local originalEvent = remoteEvent.FireServer
+local originalUnreliableEvent = unreliableRemoteEvent.FireServer
 local originalFunction = remoteFunction.InvokeServer
 local GetDebugIDInvoke = GetDebugIdHandler.Invoke
 
-function GetDebugIdHandler.OnInvoke(obj: Instance)
+function GetDebugIdHandler.OnInvoke(obj: Instance) -- To avoid having to set thread identity and ect
     return OldDebugId(obj)
 end
 
 local function ThreadGetDebugId(obj: Instance): string 
-    return GetDebugIDInvoke(GetDebugIdHandler,obj)
+    return GetDebugIDInvoke(GetDebugIdHandler,obj) -- indexing to avoid having to setnamecall later
 end
 
 local synv3 = false
@@ -408,6 +375,7 @@ local function logthread(thread: thread)
     table.insert(running_threads,thread)
 end
 
+--- Prevents remote spam from causing lag (clears logs after `getgenv().SIMPLESPYCONFIG_MaxRemotes` or 500 remotes)
 function clean()
     local max = getgenv().SIMPLESPYCONFIG_MaxRemotes
     if not typeof(max) == "number" and math.floor(max) ~= max then
@@ -435,12 +403,14 @@ local function ThreadIsNotDead(thread: thread): boolean
     return not status(thread) == "dead"
 end
 
+--- Scales the ToolTip to fit containing text
 function scaleToolTip()
     local size = TextService:GetTextSize(TextLabel.Text, TextLabel.TextSize, TextLabel.Font, Vector2.new(196, math.huge))
     TextLabel.Size = UDim2.new(0, size.X, 0, size.Y)
     ToolTip.Size = UDim2.new(0, size.X + 4, 0, size.Y + 4)
 end
 
+--- Executed when the toggle button (the SimpleSpy logo) is hovered over
 function onToggleButtonHover()
     if not toggle then
         TweenService:Create(Simple, TweenInfo.new(0.5), {TextColor3 = Color3.fromRGB(252, 51, 51)}):Play()
@@ -449,18 +419,22 @@ function onToggleButtonHover()
     end
 end
 
+--- Executed when the toggle button is unhovered over
 function onToggleButtonUnhover()
     TweenService:Create(Simple, TweenInfo.new(0.5), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
 end
 
+--- Executed when the X button is hovered over
 function onXButtonHover()
     TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 60, 60)}):Play()
 end
 
+--- Executed when the X button is unhovered over
 function onXButtonUnhover()
     TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(37, 36, 38)}):Play()
 end
 
+--- Toggles the remote spy method (when button clicked)
 function onToggleButtonClick()
     if toggle then
         TweenService:Create(Simple, TweenInfo.new(0.5), {TextColor3 = Color3.fromRGB(252, 51, 51)}):Play()
@@ -470,6 +444,7 @@ function onToggleButtonClick()
     toggleSpyMethod()
 end
 
+--- Reconnects bringBackOnResize if the current viewport changes and also connects it initially
 function connectResize()
     if not workspace.CurrentCamera then
         workspace:GetPropertyChangedSignal("CurrentCamera"):Wait()
@@ -484,6 +459,7 @@ function connectResize()
     end)
 end
 
+--- Brings gui back if it gets lost offscreen (connected to the camera viewport changing)
 function bringBackOnResize()
     validateSize()
     if sideClosed then
@@ -511,6 +487,8 @@ function bringBackOnResize()
     TweenService.Create(TweenService, Background, TweenInfo.new(0.1), {Position = UDim2.new(0, currentX, 0, currentY)}):Play()
 end
 
+--- Drags gui (so long as mouse is held down)
+--- @param input InputObject
 function onBarInput(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         local lastPos = UserInputService:GetMouseLocation()
@@ -542,6 +520,9 @@ function onBarInput(input)
                     lastPos = newPos
                     TweenService.Create(TweenService, Background, TweenInfo.new(0.1), {Position = UDim2.new(0, currentPos.X, 0, currentPos.Y)}):Play()
                 end
+                    -- if input.UserInputState ~= Enum.UserInputState.Begin then
+                    --     RunService.UnbindFromRenderStep(RunService, "drag")
+                    -- end
             end)
         end
         table.insert(connections, UserInputService.InputEnded:Connect(function(inputE)
@@ -555,6 +536,7 @@ function onBarInput(input)
     end
 end
 
+--- Fades out the table of elements (and makes them invisible), returns a function to make them visible again
 function fadeOut(elements)
     local data = {}
     for _, v in next, elements do
@@ -604,6 +586,7 @@ function fadeOut(elements)
     end
 end
 
+--- Expands and minimizes the gui (closed is the toggle boolean)
 function toggleMinimize(override)
     if mainClosing and not override or maximized then
         return
@@ -630,6 +613,7 @@ function toggleMinimize(override)
     mainClosing = false
 end
 
+--- Expands and minimizes the sidebar (sideClosed is the toggle boolean)
 function toggleSideTray(override)
     if sideClosing and not override or maximized then
         return
@@ -657,6 +641,7 @@ function toggleSideTray(override)
     sideClosing = false
 end
 
+--- Expands code box to fit screen for more convenient viewing
 function toggleMaximize()
     if not sideClosed and not maximized then
         maximized = true
@@ -691,6 +676,8 @@ function toggleMaximize()
     end
 end
 
+--- Checks if cursor is within resize range
+--- @param p Vector2
 function isInResizeRange(p)
     local relativeP = p - Background.AbsolutePosition
     local range = 5
@@ -705,12 +692,15 @@ function isInResizeRange(p)
     return false
 end
 
+--- Checks if cursor is within dragging range
+--- @param p Vector2
 function isInDragRange(p)
     local relativeP = p - Background.AbsolutePosition
     local topbarAS = TopBar.AbsoluteSize
     return relativeP.X <= topbarAS.X - CloseButton.AbsoluteSize.X * 3 and relativeP.X >= 0 and relativeP.Y <= topbarAS.Y and relativeP.Y >= 0 or false
 end
 
+--- Called when mouse enters SimpleSpy
 local customCursor = Create("ImageLabel",{Parent = SimpleSpy3,Visible = false,Size = UDim2.fromOffset(200, 200),ZIndex = 1e9,BackgroundTransparency = 1,Image = "",Parent = SimpleSpy3})
 function mouseEntered()
     local con = connections["SIMPLESPY_CURSOR"]
@@ -740,6 +730,7 @@ function mouseEntered()
     end)
 end
 
+--- Called when mouse moves
 function mouseMoved()
     local mousePos = UserInputService:GetMouseLocation() - GuiInset
     if not closed
@@ -754,6 +745,7 @@ function mouseMoved()
     end
 end
 
+--- Adjusts the ui elements to the 'Maximized' size
 function maximizeSize(speed)
     if not speed then
         speed = 0.05
@@ -766,6 +758,7 @@ function maximizeSize(speed)
     TweenService:Create(LogList, TweenInfo.new(speed), { Size = UDim2.fromOffset(LogList.AbsoluteSize.X, Background.AbsoluteSize.Y - TopBar.AbsoluteSize.Y - 18) }):Play()
 end
 
+--- Adjusts the ui elements to close the side
 function minimizeSize(speed)
     if not speed then
         speed = 0.05
@@ -778,6 +771,7 @@ function minimizeSize(speed)
     TweenService:Create(LogList, TweenInfo.new(speed), { Size = UDim2.fromOffset(LogList.AbsoluteSize.X, Background.AbsoluteSize.Y - TopBar.AbsoluteSize.Y - 18) }):Play()
 end
 
+--- Ensures size is within screensize limitations
 function validateSize()
     local x, y = Background.AbsoluteSize.X, Background.AbsoluteSize.Y
     local screenSize = workspace.CurrentCamera.ViewportSize
@@ -797,6 +791,8 @@ function validateSize()
     Background.Size = UDim2.fromOffset(x, y)
 end
 
+--- Called on user input while mouse in 'Background' frame
+--- @param input InputObject
 function backgroundUserInput(input)
     local mousePos = UserInputService:GetMouseLocation() - GuiInset
     local inResizeRange, type = isInResizeRange(mousePos)
@@ -841,6 +837,7 @@ function backgroundUserInput(input)
     end
 end
 
+--- Gets the player an instance is descended from
 function getPlayerFromInstance(instance)
     for _, v in next, Players:GetPlayers() do
         if v.Character and (instance:IsDescendantOf(v.Character) or instance == v.Character) then
@@ -849,6 +846,7 @@ function getPlayerFromInstance(instance)
     end
 end
 
+--- Runs on MouseButton1Click of an event frame
 function eventSelect(frame)
     if selected and selected.Log  then
         if selected.Button then
@@ -874,14 +872,19 @@ function eventSelect(frame)
     end
 end
 
+--- Updates the canvas size to fit the current amount of function buttons
 function updateFunctionCanvas()
     ScrollingFrame.CanvasSize = UDim2.fromOffset(UIGridLayout.AbsoluteContentSize.X, UIGridLayout.AbsoluteContentSize.Y)
 end
 
+--- Updates the canvas size to fit the amount of current remotes
 function updateRemoteCanvas()
     LogList.CanvasSize = UDim2.fromOffset(UIListLayout.AbsoluteContentSize.X, UIListLayout.AbsoluteContentSize.Y)
 end
 
+--- Allows for toggling of the tooltip and easy setting of le description
+--- @param enable boolean
+--- @param text string
 function makeToolTip(enable, text)
     if enable and text then
         if ToolTip.Visible then
@@ -935,6 +938,10 @@ function makeToolTip(enable, text)
     end
 end
 
+--- Creates new function button (below codebox)
+--- @param name string
+---@param description function
+---@param onClick function
 function newButton(name, description, onClick)
     local FunctionTemplate = Create("Frame",{Name = "FunctionTemplate",Parent = ScrollingFrame,BackgroundColor3 = Color3.new(1, 1, 1),BackgroundTransparency = 1,Size = UDim2.new(0, 117, 0, 23)})
     local ColorBar = Create("Frame",{Name = "ColorBar",Parent = FunctionTemplate,BackgroundColor3 = Color3.new(1, 1, 1),BorderSizePixel = 0,Position = UDim2.new(0, 7, 0, 10),Size = UDim2.new(0, 7, 0, 18),ZIndex = 3})
@@ -957,6 +964,13 @@ function newButton(name, description, onClick)
     updateFunctionCanvas()
 end
 
+--- Adds new Remote to logs
+--- @param name string The name of the remote being logged
+--- @param type string The type of the remote being logged (either 'function' or 'event')
+--- @param args any
+--- @param remote any
+--- @param function_info string
+--- @param blocked any
 function newRemote(type, data)
     if layoutOrderNum < 1 then layoutOrderNum = 999999999 end
     local remote = data.remote
@@ -967,14 +981,13 @@ function newRemote(type, data)
     local Text = Create("TextLabel",{TextTruncate = Enum.TextTruncate.AtEnd,Name = "Text",Parent = RemoteTemplate,BackgroundColor3 = Color3.new(1, 1, 1),BackgroundTransparency = 1,Position = UDim2.new(0, 12, 0, 1),Size = UDim2.new(0, 105, 0, 18),ZIndex = 2,Font = Enum.Font.SourceSans,Text = remote.Name,TextColor3 = Color3.new(1, 1, 1),TextSize = 14,TextXAlignment = Enum.TextXAlignment.Left})
     local Button = Create("TextButton",{Name = "Button",Parent = RemoteTemplate,BackgroundColor3 = Color3.new(0, 0, 0),BackgroundTransparency = 0.75,BorderColor3 = Color3.new(1, 1, 1),Position = UDim2.new(0, 0, 0, 1),Size = UDim2.new(0, 117, 0, 18),AutoButtonColor = false,Font = Enum.Font.SourceSans,Text = "",TextColor3 = Color3.new(0, 0, 0),TextSize = 14})
 
-        local log = {
+    local log = {
         Name = remote.name,
         Function = data.infofunc or "--Function Info is disabled",
         Remote = remote,
         DebugId = data.id,
         metamethod = data.metamethod,
         args = data.args,
-        decoded = data.decoded,
         Log = RemoteTemplate,
         Button = Button,
         Blocked = data.blocked,
@@ -987,7 +1000,7 @@ function newRemote(type, data)
     local connect = Button.MouseButton1Click:Connect(function()
         logthread(running())
         eventSelect(RemoteTemplate)
-        log.GenScript = genScript(log.Remote, log.args, log.decoded)
+        log.GenScript = genScript(log.Remote, log.args)
         if blocked then
             log.GenScript = "-- THIS REMOTE WAS PREVENTED FROM FIRING TO THE SERVER BY SIMPLESPY\n\n" .. log.GenScript
         end
@@ -1001,18 +1014,13 @@ function newRemote(type, data)
     updateRemoteCanvas()
 end
 
-function genScript(remote, args, decoded)
+--- Generates a script from the provided arguments (first has to be remote path)
+function genScript(remote, args)
     prevTables = {}
-    local comment = ""
-    if decoded then
-        comment = "-- " .. decoded:gsub("\n", "\n-- ") .. "\n\n"
-    end
-
-    local gen = comment
-
+    local gen = ""
     if #args > 0 then
         xpcall(function()
-            gen = v2v({args = args}) .. "\n"
+            gen = "local args = "..LazyFix.Convert(args, true) .. "\n"
         end,function(err)
             gen ..= "-- An error has occured:\n--"..err.."\n-- TableToString failure! Reverting to legacy functionality (results may vary)\nlocal args = {"
             xpcall(function()
@@ -1044,22 +1052,23 @@ function genScript(remote, args, decoded)
         if not remote:IsDescendantOf(game) and not getnilrequired then
             gen = "function getNil(name,class) for _,v in next, getnilinstances()do if v.ClassName==class and v.Name==name then return v;end end end\n\n" .. gen
         end
-        if remote:IsA("RemoteEvent") then
-            gen ..= v2s(remote) .. ":FireServer(unpack(args))"
+        if remote:IsA("RemoteEvent") or remote:IsA("UnreliableRemoteEvent") then
+            gen ..= LazyFix.ConvertKnown("Instance", remote) .. ":FireServer(unpack(args))"
         elseif remote:IsA("RemoteFunction") then
-            gen = gen .. v2s(remote) .. ":InvokeServer(unpack(args))"
+            gen = gen .. LazyFix.ConvertKnown("Instance", remote) .. ":InvokeServer(unpack(args))"
         end
     else
-        if remote:IsA("RemoteEvent") then
-            gen ..= v2s(remote) .. ":FireServer()"
+        if remote:IsA("RemoteEvent") or remote:IsA("UnreliableRemoteEvent") then
+            gen ..= LazyFix.ConvertKnown("Instance", remote) .. ":FireServer()"
         elseif remote:IsA("RemoteFunction") then
-            gen ..= v2s(remote) .. ":InvokeServer()"
+            gen ..= LazyFix.ConvertKnown("Instance", remote) .. ":InvokeServer()"
         end
     end
     prevTables = {}
     return gen
 end
 
+--- value-to-string: value, string (out), level (indentation), parent table, var name, is from tovar
 local CustomGeneration = {
     Vector3 = (function()
         local temp = {}
@@ -1169,10 +1178,10 @@ ufunctions = {
     Color3 = function(u)
         return `Color3.new({u.R}, {u.G}, {u.B})`
     end,
-    RBXScriptSignal = function(u)
+    RBXScriptSignal = function(u) -- The server doesnt recive this
         return "RBXScriptSignal --[[RBXScriptSignal's are not supported]]"
     end,
-    RBXScriptConnection = function(u)
+    RBXScriptConnection = function(u) -- The server doesnt recive this
         return "RBXScriptConnection --[[RBXScriptConnection's are not supported]]"
     end,
 }
@@ -1188,7 +1197,7 @@ local typeofv2sfunctions = {
     string = function(v,l)
         return formatstr(v, l)
     end,
-    ["function"] = function(v)
+    ["function"] = function(v) -- The server doesnt recive this
         return f2s(v)
     end,
     table = function(v, l, p, n, vtv, i, pt, path, tables, tI)
@@ -1198,7 +1207,7 @@ local typeofv2sfunctions = {
         local DebugId = OldDebugId(v)
         return i2p(v,generation[DebugId])
     end,
-    userdata = function(v)
+    userdata = function(v) -- The server doesnt recive this
         if configs.advancedinfo then
             if getrawmetatable(v) then
                 return "newproxy(true)"
@@ -1206,15 +1215,7 @@ local typeofv2sfunctions = {
             return "newproxy(false)"
         end
         return "newproxy(true)"
-    end,
-buffer = function(v)
-        local len = buffer.len(v)
-        local bytes = {}
-        for i = 0, len - 1 do
-            bytes[#bytes+1] = string.format("\\%03d", buffer.readu8(v, i))
-        end
-        return 'buffer.fromstring("' .. table.concat(bytes) .. '")'
-    end,
+    end
 }
 
 local typev2sfunctions = {
@@ -1247,6 +1248,8 @@ function v2s(v, l, p, n, vtv, i, pt, path, tables, tI)
     return `{vtypeof}({rawtostring(v)}) --[[Generation Failure]]`
 end
 
+--- value-to-variable
+--- @param t any
 function v2v(t)
     topstr = ""
     bottomstr = ""
@@ -1279,47 +1282,59 @@ function tabletostring(tbl: table,format: boolean)
     
 end
 
+--- table-to-string
+--- @param t table
+--- @param l number
+--- @param p table
+--- @param n string
+--- @param vtv boolean
+--- @param i any
+--- @param pt table
+--- @param path string
+--- @param tables table
+--- @param tI table
 function t2s(t, l, p, n, vtv, i, pt, path, tables, tI)
-    local globalIndex = table.find(getgenv(), t)
+    local globalIndex = table.find(getgenv(), t) -- checks if table is a global
     if type(globalIndex) == "string" then
         return globalIndex
     end
     if not tI then
         tI = {0}
     end
-    if not path then
+    if not path then -- sets path to empty string (so it doesn't have to manually provided every time)
         path = ""
     end
-    if not l then
+    if not l then -- sets the level to 0 (for indentation) and tables for logging tables it already serialized
         l = 0
         tables = {}
     end
-    if not p then
+    if not p then -- p is the previous table but doesn't really matter if it's the first
         p = t
     end
-    for _, v in next, tables do
+    for _, v in next, tables do -- checks if the current table has been serialized before
         if n and rawequal(v, t) then
             bottomstr = bottomstr .. "\n" .. rawtostring(n) .. rawtostring(path) .. " = " .. rawtostring(n) .. rawtostring(({v2p(v, p)})[2])
             return "{} --[[DUPLICATE]]"
         end
     end
-    table.insert(tables, t)
-    local s =  "{"
+    table.insert(tables, t) -- logs table to past tables
+    local s =  "{" -- start of serialization
     local size = 0
-    l += indent
-    for k, v in next, t do
-        size = size + 1
+    l += indent -- set indentation level
+    for k, v in next, t do -- iterates over table
+        size = size + 1 -- changes size for max limit
         if size > (getgenv().SimpleSpyMaxTableSize or 1000) then
             s = s .. "\n" .. string.rep(" ", l) .. "-- MAXIMUM TABLE SIZE REACHED, CHANGE 'getgenv().SimpleSpyMaxTableSize' TO ADJUST MAXIMUM SIZE "
             break
         end
-        if rawequal(k, t) then
+        if rawequal(k, t) then -- checks if the table being iterated over is being used as an index within itself (yay, lua)
             bottomstr ..= `\n{n}{path}[{n}{path}] = {(rawequal(v,k) and `{n}{path}` or v2s(v, l, p, n, vtv, k, t, `{path}[{n}{path}]`, tables))}`
+            --bottomstr = bottomstr .. "\n" .. rawtostring(n) .. rawtostring(path) .. "[" .. rawtostring(n) .. rawtostring(path) .. "]" .. " = " .. (rawequal(v, k) and rawtostring(n) .. rawtostring(path) or v2s(v, l, p, n, vtv, k, t, path .. "[" .. rawtostring(n) .. rawtostring(path) .. "]", tables))
             size -= 1
             continue
         end
-        local currentPath = ""
-        if type(k) == "string" and k:match("^[%a_]+[%w_]*$") then
+        local currentPath = "" -- initializes the path of 'v' within 't'
+        if type(k) == "string" and k:match("^[%a_]+[%w_]*$") then -- cleanly handles table path generation (for the first half)
             currentPath = "." .. k
         else
             currentPath = "[" .. v2s(k, l, p, n, vtv, k, t, path .. currentPath, tables, tI) .. "]"
@@ -1327,17 +1342,19 @@ function t2s(t, l, p, n, vtv, i, pt, path, tables, tI)
         if size % 100 == 0 then
             scheduleWait()
         end
+        -- actually serializes the member of the table
         s = s .. "\n" .. string.rep(" ", l) .. "[" .. v2s(k, l, p, n, vtv, k, t, path .. currentPath, tables, tI) .. "] = " .. v2s(v, l, p, n, vtv, k, t, path .. currentPath, tables, tI) .. ","
     end
-    if #s > 1 then
+    if #s > 1 then -- removes the last comma because it looks nicer (no way to tell if it's done 'till it's done so...)
         s = s:sub(1, #s - 1)
     end
-    if size > 0 then
+    if size > 0 then -- cleanly indents the last curly bracket
         s = s .. "\n" .. string.rep(" ", l - indent)
     end
     return s .. "}"
 end
 
+--- function-to-string
 function f2s(f)
     for k, x in next, getgenv() do
         local isgucci, gpath
@@ -1365,6 +1382,8 @@ function f2s(f)
     return tostring(f)
 end
 
+--- instance-to-path
+--- @param i userdata
 function i2p(i,customgen)
     if customgen then
         return customgen
@@ -1395,7 +1414,7 @@ function i2p(i,customgen)
     elseif parent ~= game then
         while true do
             if parent and parent.Parent == game then
-                if game:FindService(parent.ClassName) then
+                if SafeGetService(parent.ClassName) then
                     if lower(parent.ClassName) == "workspace" then
                         return `workspace{out}`
                     else
@@ -1429,6 +1448,7 @@ function i2p(i,customgen)
     end
 end
 
+--- Gets the player an instance is descended from
 function getplayer(instance)
     for _, v in next, Players:GetPlayers() do
         if v.Character and (instance:IsDescendantOf(v.Character) or instance == v.Character) then
@@ -1437,6 +1457,7 @@ function getplayer(instance)
     end
 end
 
+--- value-to-path (in table)
 function v2p(x, t, path, prev)
     if not path then
         path = ""
@@ -1479,6 +1500,7 @@ function v2p(x, t, path, prev)
     return false, ""
 end
 
+--- format s: string, byte encrypt (for weird symbols)
 function formatstr(s, indentation)
     if not indentation then
         indentation = 0
@@ -1486,6 +1508,8 @@ function formatstr(s, indentation)
     local handled, reachedMax = handlespecials(s, indentation)
     return '"' .. handled .. '"' .. (reachedMax and " --[[ MAXIMUM STRING SIZE REACHED, CHANGE 'getgenv().SimpleSpyMaxStringSize' TO ADJUST MAXIMUM SIZE ]]" or "")
 end
+
+--- Adds \'s to the text as a replacement to whitespace chars and other things because string.format can't yayeet
 
 local function isFinished(coroutines: table)
     for _, v in next, coroutines do
@@ -1538,6 +1562,8 @@ function handlespecials(s, indentation)
                 i += 1
             elseif byte(char) > 126 or byte(char) < 32 then
                 resume(c, i, "\\" .. byte(char))
+                -- s = s:sub(0, i - 1) .. "\\" .. byte(char) .. s:sub(i + 1, -1)
+                i += #rawtostring(byte(char))
             end
             if i >= n * 100 then
                 local extra = string.format('" ..\n%s"', string.rep(" ", indentation + indent))
@@ -1558,9 +1584,12 @@ function handlespecials(s, indentation)
     return s, false
 end
 
+--- finds script from 'src' from getinfo, returns nil if not found
+--- @param src string
 function getScriptFromSrc(src)
     local realPath
     local runningTest
+    --- @type number
     local s, e
     local match = false
     if src:sub(1, 1) == "=" then
@@ -1607,10 +1636,13 @@ function getScriptFromSrc(src)
     return realPath
 end
 
+--- schedules the provided function (and calls it with any args after)
+
 function schedule(f, ...)
     table.insert(scheduled, {f, ...})
 end
 
+--- yields the current thread until the scheduler gives the ok
 function scheduleWait()
     local thread = running()
     schedule(function()
@@ -1619,6 +1651,7 @@ function scheduleWait()
     yield()
 end
 
+--- the big (well tbh small now) boi task scheduler himself, handles p much anything as quicc as possible
 local function taskscheduler()
     if not toggle then
         scheduled = {}
@@ -1643,8 +1676,13 @@ end
 function remoteHandler(data)
     if configs.autoblock then
         local id = data.id
-        if excluding[id] then return end
-        if not history[id] then history[id] = {badOccurances = 0, lastCall = tick()} end
+
+        if excluding[id] then
+            return
+        end
+        if not history[id] then
+            history[id] = {badOccurances = 0, lastCall = tick()}
+        end
         if tick() - history[id].lastCall < 1 then
             history[id].badOccurances += 1
             return
@@ -1658,22 +1696,7 @@ function remoteHandler(data)
         history[id].lastCall = tick()
     end
 
-    local decodedString = nil
-    local remote = data.remote
-    if remote and (remote.Name == "ByteNetReliable" or remote.Name == "ByteNetUnreliable") then
-        local args = data.args
-        if args and #args > 0 and typeof(args[1]) == "buffer" then
-            local decoded = decodeByteNetBuffer(args[1])
-            if decoded then
-                decodedString = formatDecoded(decoded)
-            end
-        end
-    end
-
-    -- Store decoded in data for later use
-    data.decoded = decodedString
-
-    if data.remote:IsA("RemoteEvent") and lower(data.method) == "fireserver" then
+    if (data.remote:IsA("RemoteEvent") or data.remote:IsA("UnreliableRemoteEvent")) and lower(data.method) == "fireserver" then
         newRemote("event", data)
     elseif data.remote:IsA("RemoteFunction") and lower(data.method) == "invokeserver" then
         newRemote("function", data)
@@ -1684,7 +1707,7 @@ local newindex = function(method,originalfunction,...)
     if typeof(...) == 'Instance' then
         local remote = cloneref(...)
 
-        if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
+        if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") or remote:IsA("UnreliableRemoteEvent") then
             if not configs.logcheckcaller and checkcaller() then return originalfunction(...) end
             local id = ThreadGetDebugId(remote)
             local blockcheck = tablecheck(blocklist,remote,id)
@@ -1711,6 +1734,25 @@ local newindex = function(method,originalfunction,...)
                 end
 
                 schedule(remoteHandler,data)
+
+                --[[if configs.logreturnvalues and remote:IsA("RemoteFunction") then
+                    local thread = running()
+                    local returnargs = {...}
+                    local returndata
+
+                    spawn(function()
+                        setnamecallmethod(method)
+                        returndata = originalnamecall(unpack(returnargs))
+                        data.returnvalue.data = returndata
+                        if ThreadIsNotDead(thread) then
+                            resume(thread)
+                        end
+                     end)
+                    yield()
+                    if not blockcheck then
+                        return returndata
+                    end
+                end]]
                 end
             if blockcheck then return end
         end
@@ -1725,7 +1767,7 @@ local newnamecall = newcclosure(function(...)
         if typeof(...) == 'Instance' then
             local remote = cloneref(...)
 
-            if IsA(remote,"RemoteEvent") or IsA(remote,"RemoteFunction") then    
+            if IsA(remote,"RemoteEvent") or IsA(remote,"RemoteFunction") or IsA(remote,"UnreliableRemoteEvent") then    
                 if not configs.logcheckcaller and checkcaller() then return originalnamecall(...) end
                 local id = ThreadGetDebugId(remote)
                 local blockcheck = tablecheck(blocklist,remote,id)
@@ -1752,6 +1794,25 @@ local newnamecall = newcclosure(function(...)
                     end
 
                     schedule(remoteHandler,data)
+                    
+                    --[[if configs.logreturnvalues and remote.IsA(remote,"RemoteFunction") then
+                        local thread = running()
+                        local returnargs = {...}
+                        local returndata
+
+                        spawn(function()
+                            setnamecallmethod(method)
+                            returndata = originalnamecall(unpack(returnargs))
+                            data.returnvalue.data = returndata
+                            if ThreadIsNotDead(thread) then
+                                resume(thread)
+                            end
+                        end)
+                        yield()
+                        if not blockcheck then
+                            return returndata
+                        end
+                    end]]
                 end
                 if blockcheck then return end
             end
@@ -1764,6 +1825,10 @@ local newFireServer = newcclosure(function(...)
     return newindex("FireServer",originalEvent,...)
 end)
 
+local newUnreliableFireServer = newcclosure(function(...)
+    return newindex("FireServer",originalUnreliableEvent,...)
+end)
+
 local newInvokeServer = newcclosure(function(...)
     return newindex("InvokeServer",originalFunction,...)
 end)
@@ -1773,6 +1838,7 @@ local function disablehooks()
         unhook(getrawmetatable(game).__namecall,originalnamecall)
         unhook(Instance.new("RemoteEvent").FireServer, originalEvent)
         unhook(Instance.new("RemoteFunction").InvokeServer, originalFunction)
+        unhook(Instance.new("UnreliableRemoteEvent").FireServer, originalUnreliableEvent)
         restorefunction(originalnamecall)
         restorefunction(originalEvent)
         restorefunction(originalFunction)
@@ -1784,9 +1850,11 @@ local function disablehooks()
         end
         hookfunction(Instance.new("RemoteEvent").FireServer, originalEvent)
         hookfunction(Instance.new("RemoteFunction").InvokeServer, originalFunction)
+        hookfunction(Instance.new("UnreliableRemoteEvent").FireServer, originalUnreliableEvent)
     end
 end
 
+--- Toggles on and off the remote spy
 function toggleSpy()
     if not toggle then
         local oldnamecall
@@ -1794,6 +1862,7 @@ function toggleSpy()
             oldnamecall = hook(getrawmetatable(game).__namecall,clonefunction(newnamecall))
             originalEvent = hook(Instance.new("RemoteEvent").FireServer, clonefunction(newFireServer))
             originalFunction = hook(Instance.new("RemoteFunction").InvokeServer, clonefunction(newInvokeServer))
+            originalUnreliableEvent = hook(Instance.new("UnreliableRemoteEvent").FireServer, clonefunction(newUnreliableFireServer))
         else
             if hookmetamethod then
                 oldnamecall = hookmetamethod(game, "__namecall", clonefunction(newnamecall))
@@ -1802,6 +1871,7 @@ function toggleSpy()
             end
             originalEvent = hookfunction(Instance.new("RemoteEvent").FireServer, clonefunction(newFireServer))
             originalFunction = hookfunction(Instance.new("RemoteFunction").InvokeServer, clonefunction(newInvokeServer))
+            originalUnreliableEvent = hookfunction(Instance.new("UnreliableRemoteEvent").FireServer, clonefunction(newUnreliableFireServer))
         end
         originalnamecall = originalnamecall or function(...)
             return oldnamecall(...)
@@ -1811,11 +1881,13 @@ function toggleSpy()
     end
 end
 
+--- Toggles between the two remotespy methods (hookfunction currently = disabled)
 function toggleSpyMethod()
     toggleSpy()
     toggle = not toggle
 end
 
+--- Shuts down the remote spy
 local function shutdown()
     if schedulerconnect then
         schedulerconnect:Disconnect()
@@ -1857,12 +1929,12 @@ if not getgenv().SimpleSpyExecuted then
         end))
         getgenv().SimpleSpy = SimpleSpy
         getgenv().getNil = function(name,class)
-			for _,v in next, getnilinstances() do
-				if v.ClassName == class and v.Name == name then
-					return v;
-				end
-			end
-		end
+            for _,v in next, getnilinstances() do
+                if v.ClassName == class and v.Name == name then
+                    return v;
+                end
+            end
+        end
         Background.MouseEnter:Connect(function(...)
             mouseInGui = true
             mouseEntered()
@@ -1872,6 +1944,7 @@ if not getgenv().SimpleSpyExecuted then
             mouseEntered()
         end)
         TextLabel:GetPropertyChangedSignal("Text"):Connect(scaleToolTip)
+        -- TopBar.InputBegan:Connect(onBarInput)
         MinimizeButton.MouseButton1Click:Connect(toggleMinimize)
         MaximizeButton.MouseButton1Click:Connect(toggleSideTray)
         Simple.MouseButton1Click:Connect(onToggleButtonClick)
@@ -1915,7 +1988,29 @@ function SimpleSpy:newButton(name, description, onClick)
     return newButton(name, description, onClick)
 end
 
------ ADD ONS -----
+----- ADD ONS ----- (easily add or remove additonal functionality to the RemoteSpy!)
+--[[
+    Some helpful things:
+        - add your function in here, and create buttons for them through the 'newButton' function
+        - the first argument provided is the TextButton the player clicks to run the function
+        - generated scripts are generated when the namecall is initially fired and saved in remoteFrame objects
+        - blacklisted remotes will be ignored directly in namecall (less lag)
+        - the properties of a 'remoteFrame' object:
+            {
+                Name: (string) The name of the Remote
+                GenScript: (string) The generated script that appears in the codebox (generated when namecall fired)
+                Source: (Instance (LocalScript)) The script that fired/invoked the remote
+                Remote: (Instance (RemoteEvent) | Instance (RemoteFunction)) The remote that was fired/invoked
+                Log: (Instance (TextButton)) The button being used for the remote (same as 'selected.Log')
+            }
+        - globals list: (contact @exx#9394 for more information or if you have suggestions for more to be added)
+            - closed: (boolean) whether or not the GUI is currently minimized
+            - logs: (table[remoteFrame]) full of remoteFrame objects (properties listed above)
+            - selected: (remoteFrame) the currently selected remoteFrame (properties listed above)
+            - blacklist: (string[] | Instance[] (RemoteEvent) | Instance[] (RemoteFunction)) an array of blacklisted names and remotes
+            - codebox: (Instance (TextBox)) the textbox that holds all the code- cleared often
+]]
+-- Copies the contents of the codebox
 newButton(
     "Copy Code",
     function() return "Click to copy code" end,
@@ -1925,6 +2020,7 @@ newButton(
     end
 )
 
+--- Copies the source script (that fired the remote)
 newButton(
     "Copy Remote",
     function() return "Click to copy the path of the remote" end,
@@ -1936,6 +2032,7 @@ newButton(
     end
 )
 
+-- Executes the contents of the codebox through loadstring
 newButton("Run Code",
     function() return "Click to execute code" end,
     function()
@@ -1944,9 +2041,9 @@ newButton("Run Code",
             TextLabel.Text = "Executing..."
             xpcall(function()
                 local returnvalue
-                if Remote:IsA("RemoteEvent") then
+                if Remote:IsA("RemoteEvent") or Remote:IsA("UnreliableRemoteEvent") then
                     returnvalue = Remote:FireServer(unpack(selected.args))
-                else
+                elseif Remote:IsA("RemoteFunction") then
                     returnvalue = Remote:InvokeServer(unpack(selected.args))
                 end
 
@@ -1960,6 +2057,7 @@ newButton("Run Code",
     end
 )
 
+--- Gets the calling script (not super reliable but w/e)
 newButton(
     "Get Script",
     function() return "Click to copy calling script to clipboard\nWARNING: Not super reliable, nil == could not find" end,
@@ -1974,6 +2072,7 @@ newButton(
     end
 )
 
+--- Decompiles the script that fired the remote and puts it in the code box
 newButton("Function Info",function() return "Click to view calling function information" end,
 function()
     local func = selected and selected.Function
@@ -2034,6 +2133,7 @@ function()
     end
 end)
 
+--- Clears the Remote logs
 newButton(
     "Clr Logs",
     function() return "Click to clear logs" end,
@@ -2051,6 +2151,7 @@ newButton(
     end
 )
 
+--- Excludes the selected.Log Remote from the RemoteSpy
 newButton(
     "Exclude (i)",
     function() return "Click to exclude this Remote.\nExcluding a remote makes SimpleSpy ignore it, but it will continue to be usable." end,
@@ -2062,6 +2163,7 @@ newButton(
     end
 )
 
+--- Excludes all Remotes that share the same name as the selected.Log remote from the RemoteSpy
 newButton(
     "Exclude (n)",
     function() return "Click to exclude all remotes with this name.\nExcluding a remote makes SimpleSpy ignore it, but it will continue to be usable." end,
@@ -2073,6 +2175,7 @@ newButton(
     end
 )
 
+--- clears blacklist
 newButton("Clr Blacklist",
 function() return "Click to clear the blacklist.\nExcluding a remote makes SimpleSpy ignore it, but it will continue to be usable." end,
 function()
@@ -2080,6 +2183,7 @@ function()
     TextLabel.Text = "Blacklist cleared!"
 end)
 
+--- Prevents the selected.Log Remote from firing the server (still logged)
 newButton(
     "Block (i)",
     function() return "Click to stop this remote from firing.\nBlocking a remote won't remove it from SimpleSpy logs, but it will not continue to fire the server." end,
@@ -2091,6 +2195,7 @@ newButton(
     end
 )
 
+--- Prevents all remotes from firing that share the same name as the selected.Log remote from the RemoteSpy (still logged)
 newButton("Block (n)",function()
     return "Click to stop remotes with this name from firing.\nBlocking a remote won't remove it from SimpleSpy logs, but it will not continue to fire the server." end,
     function()
@@ -2101,6 +2206,7 @@ newButton("Block (n)",function()
     end
 )
 
+--- clears blacklist
 newButton(
     "Clr Blocklist",
     function() return "Click to stop blocking remotes.\nBlocking a remote won't remove it from SimpleSpy logs, but it will not continue to fire the server." end,
@@ -2110,6 +2216,7 @@ newButton(
     end
 )
 
+--- Attempts to decompile the source script
 newButton("Decompile",
     function()
         return "Decompile source script"
@@ -2141,6 +2248,24 @@ newButton("Decompile",
     end
 )
 
+    --[[newButton(
+        "returnvalue",
+        function() return "Get a Remote's return data" end,
+        function()
+            if selected then
+                local Remote = selected.Remote
+                if Remote and Remote:IsA("RemoteFunction") then
+                    if selected.returnvalue and selected.returnvalue.data then
+                        return codebox:setRaw(v2s(selected.returnvalue.data))
+                    end
+                    return codebox:setRaw("No data was returned")
+                else
+                    codebox:setRaw("RemoteFunction expected got "..(Remote and Remote.ClassName))
+                end
+            end
+        end
+    )]]
+
 newButton(
     "Disable Info",
     function() return string.format("[%s] Toggle function info (because it can cause lag in some games)", configs.funcEnabled and "ENABLED" or "DISABLED") end,
@@ -2169,6 +2294,14 @@ function()
     TextLabel.Text = ("[%s] Log remotes fired by the client"):format(configs.logcheckcaller and "ENABLED" or "DISABLED")
 end)
 
+--[[newButton("Log returnvalues",function()
+    return ("[BETA] [%s] Log RemoteFunction's return values"):format(configs.logcheckcaller and "ENABLED" or "DISABLED")
+end,
+function()
+    configs.logreturnvalues = not configs.logreturnvalues
+    TextLabel.Text = ("[BETA] [%s] Log RemoteFunction's return values"):format(configs.logreturnvalues and "ENABLED" or "DISABLED")
+end)]]
+
 newButton("Advanced Info",function()
     return ("[%s] Display more remoteinfo"):format(configs.advancedinfo and "ENABLED" or "DISABLED")
 end,
@@ -2176,6 +2309,154 @@ function()
     configs.advancedinfo = not configs.advancedinfo
     TextLabel.Text = ("[%s] Display more remoteinfo"):format(configs.advancedinfo and "ENABLED" or "DISABLED")
 end)
+
+newButton(
+    "Decode ByteNet",
+    function() return "Decode the selected ByteNet packet and show its structure" end,
+    function()
+        local selectedRemote = selected
+        
+        if not selectedRemote then
+            TextLabel.Text = "No remote selected"
+            return
+        end
+        
+        local remote = selectedRemote.Remote
+        if not remote then
+            TextLabel.Text = "No remote found in selection"
+            return
+        end
+        
+        if remote.Name ~= "ByteNetReliable" and remote.Name ~= "ByteNetUnreliable" then
+            TextLabel.Text = "Selected remote is not ByteNet"
+            return
+        end
+        
+        local args = selectedRemote.args
+        if not args or #args == 0 then
+            TextLabel.Text = "No arguments to decode"
+            return
+        end
+        
+        local bufferArg = args[1]
+        if type(bufferArg) ~= "buffer" then
+            TextLabel.Text = "First argument is not a buffer"
+            return
+        end
+        
+        local success, Packets = pcall(require, game:GetService("ReplicatedStorage").Modules.Packets)
+        if not success then
+            TextLabel.Text = "Packets module not found"
+            return
+        end
+        
+        local success2, packetIDs = pcall(require, game:GetService("ReplicatedStorage").Modules.ByteNet.packets.packetIDs)
+        if not success2 then
+            TextLabel.Text = "packetIDs module not found"
+            return
+        end
+        
+        local packetNames = {}
+        for name, obj in pairs(Packets) do
+            if type(obj) == "table" and obj.reader then
+                packetNames[obj] = name
+            end
+        end
+        
+        local function decodeBuffer(buf)
+            if type(buf) ~= "buffer" then 
+                return nil, "Not a buffer" 
+            end
+            
+            local len = buffer.len(buf)
+            if len < 2 then 
+                return nil, "Buffer too short" 
+            end
+            
+            local flag = buffer.readu8(buf, 0)
+            local id = buffer.readu8(buf, 1)
+            
+            local packetObj = packetIDs[id]
+            if not packetObj then 
+                return nil, "Unknown packet ID: " .. id 
+            end
+            
+            local name = packetNames[packetObj] or "Unnamed"
+            local reader = packetObj.reader
+            if not reader then 
+                return nil, "No reader for " .. name 
+            end
+            
+            local success, data = pcall(reader, buf, 2)
+            if not success then 
+                return nil, "Reader error: " .. tostring(data) 
+            end
+            
+            return {
+                name = name,
+                id = id,
+                flag = flag,
+                data = data,
+                size = len
+            }
+        end
+        
+        local function formatData(data, indent)
+            indent = indent or 0
+            local prefix = string.rep("  ", indent)
+            
+            if type(data) == "table" then
+                local lines = {}
+                for k, v in pairs(data) do
+                    if type(v) == "table" then
+                        table.insert(lines, prefix .. tostring(k) .. ":")
+                        table.insert(lines, formatData(v, indent + 1))
+                    elseif type(v) == "Vector3" then
+                        table.insert(lines, string.format("%s%s: Vector3(%.2f, %.2f, %.2f)", 
+                            prefix, tostring(k), v.X, v.Y, v.Z))
+                    elseif type(v) == "CFrame" then
+                        local pos = v.Position
+                        table.insert(lines, string.format("%s%s: CFrame(pos: %.2f, %.2f, %.2f)", 
+                            prefix, tostring(k), pos.X, pos.Y, pos.Z))
+                    elseif type(v) == "number" then
+                        if math.floor(v) == v then
+                            table.insert(lines, string.format("%s%s: %d", prefix, tostring(k), v))
+                        else
+                            table.insert(lines, string.format("%s%s: %.3f", prefix, tostring(k), v))
+                        end
+                    elseif type(v) == "boolean" then
+                        table.insert(lines, string.format("%s%s: %s", prefix, tostring(k), tostring(v)))
+                    elseif type(v) == "string" then
+                        table.insert(lines, string.format("%s%s: \"%s\"", prefix, tostring(k), v))
+                    else
+                        table.insert(lines, prefix .. tostring(k) .. ": " .. tostring(v))
+                    end
+                end
+                return table.concat(lines, "\n")
+            elseif type(data) == "string" then
+                return prefix .. '"' .. data .. '"'
+            else
+                return prefix .. tostring(data)
+            end
+        end
+        
+        local decoded, err = decodeBuffer(bufferArg)
+        if not decoded then
+            TextLabel.Text = "Decode failed: " .. err
+            return
+        end
+        
+        local display = "--[=[ Decoded ByteNet Packet ]=]\n"
+        display = display .. string.format("Packet: %s (ID: %d, Flag: %d, Size: %d bytes)\n", 
+            decoded.name, decoded.id, decoded.flag, decoded.size)
+        display = display .. "Data:\n"
+        display = display .. formatData(decoded.data, 1)
+        display = display .. "\n--[=[ End of decoded data ]=]"
+        
+        codebox:setRaw(display)
+        TextLabel.Text = "Decoded!"
+    end
+)
 
 newButton("Join Discord",function()
     return "Joins The Simple Spy Discord"
