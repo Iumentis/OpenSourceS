@@ -966,13 +966,14 @@ function newRemote(type, data)
     local Text = Create("TextLabel",{TextTruncate = Enum.TextTruncate.AtEnd,Name = "Text",Parent = RemoteTemplate,BackgroundColor3 = Color3.new(1, 1, 1),BackgroundTransparency = 1,Position = UDim2.new(0, 12, 0, 1),Size = UDim2.new(0, 105, 0, 18),ZIndex = 2,Font = Enum.Font.SourceSans,Text = remote.Name,TextColor3 = Color3.new(1, 1, 1),TextSize = 14,TextXAlignment = Enum.TextXAlignment.Left})
     local Button = Create("TextButton",{Name = "Button",Parent = RemoteTemplate,BackgroundColor3 = Color3.new(0, 0, 0),BackgroundTransparency = 0.75,BorderColor3 = Color3.new(1, 1, 1),Position = UDim2.new(0, 0, 0, 1),Size = UDim2.new(0, 117, 0, 18),AutoButtonColor = false,Font = Enum.Font.SourceSans,Text = "",TextColor3 = Color3.new(0, 0, 0),TextSize = 14})
 
-    local log = {
+        local log = {
         Name = remote.name,
         Function = data.infofunc or "--Function Info is disabled",
         Remote = remote,
         DebugId = data.id,
         metamethod = data.metamethod,
         args = data.args,
+        decoded = data.decoded,
         Log = RemoteTemplate,
         Button = Button,
         Blocked = data.blocked,
@@ -985,7 +986,7 @@ function newRemote(type, data)
     local connect = Button.MouseButton1Click:Connect(function()
         logthread(running())
         eventSelect(RemoteTemplate)
-        log.GenScript = genScript(log.Remote, log.args)
+        log.GenScript = genScript(log.Remote, log.args, log.decoded)
         if blocked then
             log.GenScript = "-- THIS REMOTE WAS PREVENTED FROM FIRING TO THE SERVER BY SIMPLESPY\n\n" .. log.GenScript
         end
@@ -999,9 +1000,15 @@ function newRemote(type, data)
     updateRemoteCanvas()
 end
 
-function genScript(remote, args)
+function genScript(remote, args, decoded)
     prevTables = {}
-    local gen = ""
+    local comment = ""
+    if decoded then
+        comment = "-- " .. decoded:gsub("\n", "\n-- ") .. "\n\n"
+    end
+
+    local gen = comment
+
     if #args > 0 then
         xpcall(function()
             gen = v2v({args = args}) .. "\n"
@@ -1624,17 +1631,11 @@ local function tablecheck(tabletocheck,instance,id)
     return tabletocheck[id] or tabletocheck[instance.Name]
 end
 
--- // ===================== MODIFIED remoteHandler (with ByteNet decoder) ===================== //
 function remoteHandler(data)
     if configs.autoblock then
         local id = data.id
-
-        if excluding[id] then
-            return
-        end
-        if not history[id] then
-            history[id] = {badOccurances = 0, lastCall = tick()}
-        end
+        if excluding[id] then return end
+        if not history[id] then history[id] = {badOccurances = 0, lastCall = tick()} end
         if tick() - history[id].lastCall < 1 then
             history[id].badOccurances += 1
             return
@@ -1648,17 +1649,20 @@ function remoteHandler(data)
         history[id].lastCall = tick()
     end
 
-    -- ByteNet decoding (only for outgoing events)
+    local decodedString = nil
     local remote = data.remote
     if remote and (remote.Name == "ByteNetReliable" or remote.Name == "ByteNetUnreliable") then
         local args = data.args
         if args and #args > 0 and typeof(args[1]) == "buffer" then
             local decoded = decodeByteNetBuffer(args[1])
             if decoded then
-                data.args[1] = formatDecoded(decoded)
+                decodedString = formatDecoded(decoded)
             end
         end
     end
+
+    -- Store decoded in data for later use
+    data.decoded = decodedString
 
     if data.remote:IsA("RemoteEvent") and lower(data.method) == "fireserver" then
         newRemote("event", data)
@@ -1666,8 +1670,6 @@ function remoteHandler(data)
         newRemote("function", data)
     end
 end
-
--- // ===================== END MODIFIED remoteHandler ===================== //
 
 local newindex = function(method,originalfunction,...)
     if typeof(...) == 'Instance' then
