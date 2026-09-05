@@ -1,19 +1,20 @@
 -- https://github.com/wally-rblx
 
 -- Missing CoreGui modules
-local __oldRequire = require
-local __dummy = {}
-require = function(path)
-    local success, result = pcall(__oldRequire, path)
-    if success then return result end
-    local pathStr = tostring(path)
-    if pathStr:find("ClientMemoryAnalyzer") or 
-       pathStr:find("ServerMemoryAnalyzer") or 
-       pathStr:find("StatsUtils") then
-        return __dummy
+local success, result = xpcall(function()
+    local __oldRequire = require
+    local __dummy = {}
+    require = function(path)
+        local success, result = pcall(__oldRequire, path)
+        if success then return result end
+        local pathStr = tostring(path)
+        if pathStr:find("ClientMemoryAnalyzer") or 
+           pathStr:find("ServerMemoryAnalyzer") or 
+           pathStr:find("StatsUtils") then
+            return __dummy
+        end
+        return nil
     end
-    return nil
-end
 
 local Instance_new = Instance.new
 local UDim2_new = UDim2.new
@@ -2367,3 +2368,11 @@ InputService.InputBegan:connect(function(a)
 end)
 
 require = __oldRequire
+end, function(err)
+    warn("Console error: " .. tostring(err))
+    warn(debug.traceback(err, 2))
+    return {
+        GetVisibility = function() return false end,
+        SetVisibility = function() end
+    }
+end)
