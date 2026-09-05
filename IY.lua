@@ -1,4 +1,4 @@
-print("v0.1")
+print("v0.2")
 if IY_LOADED and not _G.IY_DEBUG then
 	-- error("Infinite Yield is already running!", 0)
 	return
@@ -10533,53 +10533,34 @@ addcmd("console", {}, function(args, speaker)
 	StarterGui:SetCore("DevConsoleVisible", true)
 end)
 
-addcmd('oldconsole', {}, function(args, speaker)
+addcmd('oldconsole',{},function(args, speaker)
     notify("Loading", 'Hold on a sec')
 
-    local success, consoleCode = pcall(function()
-		return game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/console.lua", true)
+    local consoleUrl = "https://raw.githubusercontent.com/Iumentis/OpenSourceS/refs/heads/main/console.lua"
+
+    local success, str = pcall(function()
+        return game:HttpGet(consoleUrl, true)
     end)
 
-	if not success or not consoleCode then
-	 notify("OldConsole", "Failed to load console script. Using original console.")
+    if not success or not str then
+        notify('Console', 'Failed to load old console, opening original console.')
         StarterGui:SetCore("DevConsoleVisible", true)
         return
     end
 
-	local patchedCode =  [[ -- Temporary require
-        local __oldRequire = require
-        local __dummy = {}
-        require = function(path)
-            local success, result = pcall(__oldRequire, path)
-            if success then return result end
-            -- If the path contains any of these module names, return a dummy
-            local pathStr = tostring(path)
-            if pathStr:find("ClientMemoryAnalyzer") or 
-               pathStr:find("ServerMemoryAnalyzer") or 
-               pathStr:find("StatsUtils") then
-                return __dummy
-            end
-            -- Otherwise, rethrow the error or return nil
-            return nil
-        end
-    ]] .. consoleCode .. [[
-        -- Restore require after the console has been built
-        require = __oldRequire
-    ]]
-
-	local func, err = loadstring(patchedCode)
-		if not func then
-        	notify("OldConsole", "Failed to parse console script: " .. tostring(err))
-        	StarterGui:SetCore("DevConsoleVisible", true)
+    local func, err = loadstring(str)
+    if not func then
+        notify('Console', 'Error parsing console: ' .. tostring(err))
+        StarterGui:SetCore("DevConsoleVisible", true)
         return
     end
 
     local ok, msg = pcall(func)
     if not ok then
-        notify("OldConsole", "Console failed: " .. tostring(msg) .. "\nOpening original Console.")
+        notify('Console', 'Console error: ' .. tostring(msg) .. '\nOpening original console.')
         StarterGui:SetCore("DevConsoleVisible", true)
     else
-        notify('Console','Press F9 to open the old console')
+        notify('Console', 'Press F9 to open the old console')
     end
 end)
 
