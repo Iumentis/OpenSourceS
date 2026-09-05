@@ -1,4 +1,4 @@
-print("v0.3")
+print("v0.4")
 if IY_LOADED and not _G.IY_DEBUG then
 	-- error("Infinite Yield is already running!", 0)
 	return
@@ -4477,7 +4477,6 @@ CMDs = {}
 CMDs[#CMDs + 1] = {NAME = 'discord / support / help', DESC = 'Invite to the Infinite Yield discord server.'}
 CMDs[#CMDs + 1] = {NAME = 'guiscale [number]', DESC = 'Changes the size of the gui. [number] accepts decimals and whole numbers. Min is 0.4 and Max is 2'}
 CMDs[#CMDs + 1] = {NAME = 'console', DESC = 'Opens the Roblox console'}
-CMDs[#CMDs + 1] = {NAME = 'oldconsole', DESC = 'Loads an old-themed Roblox console'}
 CMDs[#CMDs + 1] = {NAME = 'explorer / dex', DESC = 'Opens Dex++ by Chillz'}
 CMDs[#CMDs + 1] = {NAME = 'moondex / mdex', DESC = 'Opens DEX by Moon'}
 CMDs[#CMDs + 1] = {NAME = 'remotespy / rspy', DESC = 'Opens Cobalt to intercept incoming and outgoing network traffic'}
@@ -10531,37 +10530,6 @@ end)
 
 addcmd("console", {}, function(args, speaker)
 	StarterGui:SetCore("DevConsoleVisible", true)
-end)
-
-addcmd('oldconsole',{},function(args, speaker)
-    notify("Loading", 'Hold on a sec')
-
-    local consoleUrl = "https://raw.githubusercontent.com/Iumentis/OpenSourceS/refs/heads/main/console.lua"
-
-    local success, str = pcall(function()
-        return game:HttpGet(consoleUrl, true)
-    end)
-
-    if not success or not str then
-        notify('Console', 'Failed to load old console, opening original console.')
-        StarterGui:SetCore("DevConsoleVisible", true)
-        return
-    end
-
-    local func, err = loadstring(str)
-    if not func then
-        notify('Console', 'Error parsing console: ' .. tostring(err))
-        StarterGui:SetCore("DevConsoleVisible", true)
-        return
-    end
-
-    local ok, msg = pcall(func)
-    if not ok then
-        notify('Console', 'Console error: ' .. tostring(msg) .. '\nOpening original console.')
-        StarterGui:SetCore("DevConsoleVisible", true)
-    else
-        notify('Console', 'Press F9 to open the old console')
-    end
 end)
 
 addcmd("explorer", {"dex"}, function(args, speaker)
