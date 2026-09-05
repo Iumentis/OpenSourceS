@@ -1,3 +1,4 @@
+print("v0.1")
 if IY_LOADED and not _G.IY_DEBUG then
 	-- error("Infinite Yield is already running!", 0)
 	return
