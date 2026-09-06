@@ -9,7 +9,7 @@ local trace_error = function(err)
     print("======================================\n")
 end
 
-local function main()
+local function main(...)
 return setmetatable({[493]=function(w,k,k,k,k,k)local i=k[k[9]];
 return function(k,k)local x,T,d,F,e,y=w[104](),i[4],i[2],k;
 while T do if d<=i[1]then
