@@ -1,4 +1,5 @@
 -- Auto-generated debug wrapper
+print("v0.01")
 local trace_error = function(err)
     print("\n========================================")
     print("RUNTIME ERROR DETECTED:")
