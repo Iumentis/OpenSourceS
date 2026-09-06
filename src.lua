@@ -25365,4 +25365,7 @@ end},{}):SU(...);
 
 end
 
-local success, result = xpcall(main, trace_error)
+local function run(...)
+    return xpcall(main, trace_error, ...)
+end
+return run
