@@ -17156,16 +17156,18 @@ end;
 end,
 k = function(w, ...)
     local args = { ... }
-    args[1][args[2]] = nil
+    if args[1] then
+        args[1][args[2]] = nil
+    end
 end,
-[9540] = function(w, w)
+[9540] = function(w, ...)
     return function(w, k, i)
         local x, T
         if (w.config.useInset or i == 1) and i ~= 2 then
             x, T = Camera:WorldToScreenPoint(k)
         else
             x, T = Camera:WorldToViewportPoint(k)
-        end;
+        end
         return T and (Vector2_new(x.X, x.Y)), x.Z
     end
 end,[7454]=Vector2.new,[30]=function(w,w,k)return function(k,i,x)if k.options.core then
