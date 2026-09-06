@@ -1,5 +1,5 @@
 -- Auto-generated debug wrapper
-print("v0.03")
+print("v0.04")
 local trace_error = function(err)
     print("\n========================================")
     print("RUNTIME ERROR DETECTED:")
@@ -17153,17 +17153,21 @@ end;
 end;
 end,[93]=tostring,[72]=coroutine.status,[85]=function(w)return function()return"";
 end;
-end,k=function(w,...) local args = {...} args[1][args[2]] = nil end;
-end,[9540]=function(w,w)
-return function(w,k,i)
-local x,T
-if(w.config.useInset or i==1)and i~=2 then
-x,T=Camera:WorldToScreenPoint(k);
-else
-x,T=Camera:WorldToViewportPoint(k);
-end;
-return T and(Vector2_new(x.X,x.Y)),x.Z;
-end
+end,
+k = function(w, ...)
+    local args = { ... }
+    args[1][args[2]] = nil
+end,
+[9540] = function(w, w)
+    return function(w, k, i)
+        local x, T
+        if (w.config.useInset or i == 1) and i ~= 2 then
+            x, T = Camera:WorldToScreenPoint(k)
+        else
+            x, T = Camera:WorldToViewportPoint(k)
+        end
+        return T and (Vector2_new(x.X, x.Y)), x.Z
+    end
 end;
 end,[7454]=Vector2.new,[30]=function(w,w,k)return function(k,i,x)if k.options.core then
 x.core=true;
