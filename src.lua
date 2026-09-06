@@ -1,5 +1,5 @@
 -- Auto-generated debug wrapper
-print("v0.05")
+print("v0.06")
 local trace_error = function(err)
     print("\n========================================")
     print("RUNTIME ERROR DETECTED:")
@@ -25361,7 +25361,9 @@ local w,i=2097152*(d%128),2097152*(d-d%128);
 local d,e,N=y+(F+U+i)+w,4+x,k[1];
 return 141,k[2],N,T,e,d;
 end;
+print("SU initialization...")
 end},{}):SU(payloadData);
+print("SU completed")
 
 end
 
