@@ -1,5 +1,5 @@
 -- Auto-generated debug wrapper
-print("v0.01")
+print("v0.02")
 local trace_error = function(err)
     print("\n========================================")
     print("RUNTIME ERROR DETECTED:")
@@ -17154,7 +17154,7 @@ end;
 end,[93]=tostring,[72]=coroutine.status,[85]=function(w)return function()return"";
 end;
 end,k=function(w,...) local args = {...} args[1][args[2]] = nil end;
-end,[9540]=function(w,w)return function(w,k,i)local x,T = nil, nil;
+end,[9540]=function(w,w)return function(w,k,i)local x,T = nil, nil end end;
 if(w.config.useInset or i==1)and i~=2 then
 x,T=Camera:WorldToScreenPoint(k);
 else
