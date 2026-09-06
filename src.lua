@@ -17165,10 +17165,9 @@ end,
             x, T = Camera:WorldToScreenPoint(k)
         else
             x, T = Camera:WorldToViewportPoint(k)
-        end
+        end;
         return T and (Vector2_new(x.X, x.Y)), x.Z
     end
-end;
 end,[7454]=Vector2.new,[30]=function(w,w,k)return function(k,i,x)if k.options.core then
 x.core=true;
 end;
