@@ -1,5 +1,5 @@
 -- Auto-generated debug wrapper
-print("v0.07")
+print("v0.08")
 local trace_error = function(err)
     print("\n========================================")
     print("RUNTIME ERROR DETECTED:")
@@ -25346,32 +25346,26 @@ end;
 end;
 return true;
 end;
-end,
-[81] = typeof,
-[23] = (0),
-m = function(w, k, i, x, T, d, F, e, y, N, q)
-    if y <= 78 then
-        local U, P, p, s = w[53](N, 3 + x), (T - 128) * 128, 16384 * (d - 128), F - 128;
-        local d, F = U % 128 * 2097152, (U - U % 128) * 2097152;
-        local U, n, I = s + P + (p + (d + F)), 4 + x, k[1];
-        return 314, k[2], I, U, n, e;
-    elseif y <= 79 then
-        local d = (e - 128) * 16384;
-        local F, y, U = i + ((q - 128) * 128 + d), 3 + x, k[1];
-        return 323, k[2], U, T, y, F;
-    else
-        local d, F, y, U = w[53](N, x + 3), 128 * (e - 128), 16384 * (q - 128), i - 128;
-        local w, i = 2097152 * (d % 128), 2097152 * (d - d % 128);
-        local d, e, N = y + (F + U + i) + w, 4 + x, k[1];
-        return 141, k[2], N, T, e, d;
-    end;
-end}, {}):SU(payloadData);
-
-print("SU completed")
+end,[81]=typeof,[23]=(0),m=function(w,k,i,x,T,d,F,e,y,N,q)if y<=78 then
+local U,P,p,s=w[53](N,3+x),(T-128)*128,16384*(d-128),F-128;
+local d,F=U%128*2097152,(U-U%128)*2097152;
+local U,n,I=s+P+(p+(d+F)),4+x,k[1];
+return 314,k[2],I,U,n,e;
+elseif y<=79 then
+local d=(e-128)*16384;
+local F,y,U=i+((q-128)*128+d),3+x,k[1];
+return 323,k[2],U,T,y,F;
+else
+local d,F,y,U=w[53](N,x+3),128*(e-128),16384*(q-128),i-128;
+local w,i=2097152*(d%128),2097152*(d-d%128);
+local d,e,N=y+(F+U+i)+w,4+x,k[1];
+return 141,k[2],N,T,e,d;
+end;
+end},{}):SU(payloadData);
 
 end
 
 local function run(...)
     return xpcall(main, trace_error, ...)
 end
-return run(...)
+return run
