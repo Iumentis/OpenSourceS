@@ -1,179 +1,140 @@
--- Complete HTTP Spy - Fixed for all executors
--- Captures ALL HTTP/HTTPS traffic
+-- ===== HTTP SPY - BACKGROUND PROCESS =====
+-- Run this FIRST. It will continue running in the background.
 
-local writefile = writefile
-local appendfile = appendfile
-local makefolder = makefolder
-
--- Create log folder
+local writefile, appendfile, makefolder = writefile, appendfile, makefolder
 local folder = "HttpSpy_Logs_" .. os.date("%Y_%m_%d")
 pcall(function() makefolder(folder) end)
+pcall(function() makefolder(folder .. "/responses") end)
 
 local mainLog = folder .. "/all_requests.txt"
-local responseFolder = folder .. "/responses"
-pcall(function() makefolder(responseFolder) end)
+if writefile then writefile(mainLog, "=== FULL HTTP SPY ACTIVATED ===\n\n") end
 
--- Initialize log
-if writefile then
-    writefile(mainLog, "=== HTTP SPY LOG: " .. os.date("%Y-%m-%d %H:%M:%S") .. " ===\n\n")
+local function log(txt)
+    pcall(function() appendfile(mainLog, os.date("[%H:%M:%S] ") .. txt .. "\n") end)
 end
 
--- Fast logging
-local function log(t)
-    pcall(function()
-        appendfile(mainLog, os.date("%H:%M:%S") .. " | " .. t .. "\n")
-    end)
-end
-
--- Save response to file
-local function saveResponse(url, body, method)
+local function saveBody(url, body, prefix)
     if not body or type(body) ~= "string" or #body == 0 then return end
-    
-    local safeName = tostring(url):gsub("[^%w%-%.]", "_"):sub(1, 40)
-    local timestamp = os.date("%H%M%S")
-    local filename = string.format("%s/%s_%s_%s.txt", responseFolder, method, timestamp, safeName)
-    
-    pcall(function()
-        writefile(filename, "-- URL: " .. tostring(url) .. "\n-- Time: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n-- Method: " .. method .. "\n\n" .. tostring(body))
-    end)
-    
-    return filename
+    local safeName = tostring(url):gsub("[^%w%-%.]", "_"):sub(1, 35)
+    local path = string.format("%s/responses/%s_%s.txt", folder, prefix, safeName)
+    pcall(function() writefile(path, "-- URL: " .. url .. "\n\n" .. body) end)
 end
 
--- ===== METHOD 1: Hook game (the game object itself) =====
-local function hookGameMethods()
-    local methods = {
-        { name = "HttpGet", hasData = false, isAsync = false },
-        { name = "HttpGetAsync", hasData = false, isAsync = true },
-        { name = "HttpPost", hasData = true, isAsync = false },
-        { name = "HttpPostAsync", hasData = true, isAsync = true },
-    }
-    
-    for _, info in ipairs(methods) do
-        local methodName = info.name
-        local original = game[methodName]
-        
-        if original and type(original) == "function" then
-            local hooked
-            hooked = hookfunction(original, function(self, url, data, ...)
-                if type(url) == "string" and #url > 0 then
-                    if info.hasData then
-                        log(string.format("[%s] %s | Data: %s", methodName, url, tostring(data):sub(1, 200)))
-                    else
-                        log(string.format("[%s] %s", methodName, url))
-                    end
-                end
-                
-                local result = hooked(self, url, data, ...)
-                
-                if result and type(result) == "string" and #result > 0 then
-                    saveResponse(url, result, methodName)
-                end
-                
-                return result
-            end)
-        end
+-- Universal Request Interceptor
+local function interceptRequest(reqTable)
+    if type(reqTable) == "table" and reqTable.Url then
+        local method = reqTable.Method or "GET"
+        log("[" .. method .. "] " .. tostring(reqTable.Url))
+        if reqTable.Body then log("  Body: " .. tostring(reqTable.Body):sub(1, 200)) end
     end
 end
 
--- ===== METHOD 2: Hook HttpService =====
-local function hookHttpService()
-    local hs = game:GetService("HttpService")
-    if not hs then return end
-    
-    local methods = {
-        { name = "GetAsync", hasData = false },
-        { name = "PostAsync", hasData = true },
-        { name = "RequestAsync", hasData = true, isObject = true },
-    }
-    
-    for _, info in ipairs(methods) do
-        local original = hs[info.name]
+-- 1. Hook Executor Request Functions
+local requestFuncs = {
+    request,
+    http_request,
+    syn and syn.request,
+    http and http.request
+}
+
+for _, func in ipairs(requestFuncs) do
+    if type(func) == "function" then
+        local oldFunc
+        oldFunc = hookfunction(func, function(options, ...)
+            interceptRequest(options)
+            local response = oldFunc(options, ...)
+            if response and response.Body and options and options.Url then
+                saveBody(options.Url, response.Body, options.Method or "REQ")
+            end
+            return response
+        end)
+    end
+end
+
+-- 2. Hook game.HttpGet
+if game.HttpGet then
+    local oldHttpGet
+    oldHttpGet = hookfunction(game.HttpGet, function(self, url, ...)
+        log("[HttpGet] " .. tostring(url))
+        local result = oldHttpGet(self, url, ...)
+        if result then saveBody(url, result, "GET") end
+        return result
+    end)
+end
+
+-- 3. Hook game.HttpPost
+if game.HttpPost then
+    local oldHttpPost
+    oldHttpPost = hookfunction(game.HttpPost, function(self, url, data, ...)
+        log("[HttpPost] " .. tostring(url))
+        if data then log("  Data: " .. tostring(data):sub(1, 200)) end
+        local result = oldHttpPost(self, url, data, ...)
+        if result then saveBody(url, result, "POST") end
+        return result
+    end)
+end
+
+-- 4. Hook __namecall for HttpService methods
+if hookmetamethod then
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+        
+        if (method == "HttpGet" or method == "HttpGetAsync") and type(args[1]) == "string" then
+            log("[Namecall:" .. method .. "] " .. tostring(args[1]))
+            
+            -- Store the result for saving (we need to call the original first)
+            local result = oldNamecall(self, ...)
+            if result then saveBody(args[1], result, method) end
+            return result
+        elseif method == "RequestAsync" and type(args[1]) == "table" then
+            interceptRequest(args[1])
+            local result = oldNamecall(self, ...)
+            if result and result.Body and args[1] and args[1].Url then
+                saveBody(args[1].Url, result.Body, "REQ")
+            end
+            return result
+        end
+        
+        return oldNamecall(self, ...)
+    end)
+end
+
+-- 5. Hook HttpService methods directly
+local hs = game:GetService("HttpService")
+if hs then
+    local methods = {"GetAsync", "PostAsync", "RequestAsync"}
+    for _, methodName in ipairs(methods) do
+        local original = hs[methodName]
         if original and type(original) == "function" then
             local hooked
             hooked = hookfunction(original, function(self, url, data, ...)
-                if info.name == "RequestAsync" then
-                    if type(url) == "table" then
-                        log(string.format("[HS.Request] %s %s", url.Method or "GET", tostring(url.Url)))
-                        if url.Body then
-                            log("  Body: " .. tostring(url.Body):sub(1, 200))
-                        end
-                        local result = hooked(self, url, data, ...)
-                        if result and result.Body then
-                            saveResponse(url.Url, result.Body, "HS_REQ")
-                        end
-                        return result
-                    end
-                else
-                    if type(url) == "string" and #url > 0 then
-                        if info.hasData then
-                            log(string.format("[HS.%s] %s | Data: %s", info.name, url, tostring(data):sub(1, 200)))
-                        else
-                            log(string.format("[HS.%s] %s", info.name, url))
-                        end
-                    end
-                    
+                if methodName == "RequestAsync" and type(url) == "table" then
+                    interceptRequest(url)
                     local result = hooked(self, url, data, ...)
-                    
-                    if result and type(result) == "string" and #result > 0 then
-                        saveResponse(url, result, "HS_" .. info.name)
+                    if result and result.Body and url and url.Url then
+                        saveBody(url.Url, result.Body, "REQ")
                     end
-                    
+                    return result
+                else
+                    if type(url) == "string" then
+                        log("[HS." .. methodName .. "] " .. tostring(url))
+                        if data then log("  Data: " .. tostring(data):sub(1, 200)) end
+                    end
+                    local result = hooked(self, url, data, ...)
+                    if result and type(result) == "string" and #result > 0 then
+                        saveBody(url, result, "HS_" .. methodName)
+                    end
                     return result
                 end
-                
-                return hooked(self, url, data, ...)
             end)
         end
     end
 end
 
--- ===== METHOD 3: Hook syn/http.request =====
-local function hookRequestFunction()
-    local reqFunc = syn and syn.request or (http and http.request)
-    if not reqFunc then return end
-    
-    local hookedReq
-    hookedReq = hookfunction(reqFunc, function(tbl, ...)
-        if type(tbl) == "table" then
-            local method = tbl.Method or "GET"
-            local url = tbl.Url or "unknown"
-            local body = tbl.Body or ""
-            
-            log(string.format("[%s] %s", method, url))
-            if body and #body > 0 then
-                log("  Body: " .. tostring(body):sub(1, 200))
-            end
-            
-            local resp = hookedReq(tbl, ...)
-            
-            if resp and resp.Body and type(resp.Body) == "string" and #resp.Body > 0 then
-                saveResponse(url, resp.Body, method)
-            end
-            
-            return resp
-        end
-        return hookedReq(tbl, ...)
-    end)
-end
-
--- ===== METHOD 4: Hook global request =====
-local function hookGlobalRequest()
-    if not request then return end
-    
-    local oldRequest = request
-    request = function(tbl, ...)
-        if type(tbl) == "table" and tbl.Url then
-            log("[GLOBAL] " .. (tbl.Method or "GET") .. " " .. tostring(tbl.Url))
-        end
-        return oldRequest(tbl, ...)
-    end
-end
-
--- ===== METHOD 5: Hook WebSocket =====
-local function hookWebSocket()
-    if not syn or not syn.websocket then return end
-    
+-- 6. Hook WebSocket if available
+if syn and syn.websocket then
     local wsConnect = debug.getupvalue(syn.websocket.connect, 1)
     if wsConnect then
         local hookedWs
@@ -184,23 +145,27 @@ local function hookWebSocket()
     end
 end
 
--- ===== ACTIVATE ALL HOOKS =====
-pcall(hookGameMethods)
-pcall(hookHttpService)
-pcall(hookRequestFunction)
-pcall(hookGlobalRequest)
-pcall(hookWebSocket)
+-- 7. Hook global request
+if request then
+    local oldRequest = request
+    request = function(tbl, ...)
+        if type(tbl) == "table" and tbl.Url then
+            log("[GLOBAL] " .. (tbl.Method or "GET") .. " " .. tostring(tbl.Url))
+        end
+        return oldRequest(tbl, ...)
+    end
+end
 
--- ===== SUMMARY =====
-log("=== HTTP SPY ACTIVATED ===")
-log("Log folder: " .. folder)
-log("All requests logged to: " .. mainLog)
-log("All responses saved to: " .. responseFolder .. "/")
-log("")
+print("\n[HTTP SPY] Active - Logging to: " .. folder)
+print("[HTTP SPY] All requests and responses are being saved!")
+print("[HTTP SPY] Ready to intercept traffic...\n")
 
-print("\n=== HTTP SPY ACTIVATED ===")
-print("Log folder: " .. folder)
-print("All requests logged to: " .. mainLog)
-print("All responses saved to: " .. responseFolder .. "/")
-print("")
-print("[!] EVERY HTTP request and response is being captured!")
+-- Keep the spy alive in the background
+local function keepAlive()
+    while true do
+        task.wait(60)
+        -- Just a heartbeat to keep the coroutine alive
+    end
+end
+
+task.spawn(keepAlive)
