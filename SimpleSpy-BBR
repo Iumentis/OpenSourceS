@@ -1,4 +1,6 @@
 --!native
+-- Optimized SimpleSpy V3 - Performance Edition (Fixed)
+
 if getgenv().SimpleSpyExecuted and type(getgenv().SimpleSpyShutdown) == "function" then
     getgenv().SimpleSpyShutdown()
 end
@@ -18,13 +20,11 @@ local _pairs = pairs
 local _ipairs = ipairs
 local _next = next
 local _select = select
-local _unpack = unpack or table.unpack
 
 local table_insert = _table.insert
 local table_remove = _table.remove
 local table_clear = _table.clear
 local table_find = _table.find
-local table_clone = _table.clone
 local string_rep = _string.rep
 local string_sub = _string.sub
 local string_format = _string.format
@@ -51,18 +51,15 @@ local configs = {
     autoblock = false,
     funcEnabled = true,
     advancedinfo = false,
-    maxTableSize = 200,        -- Reduced from 1000
-    maxStringSize = 5000,      -- Reduced from 10000
+    maxTableSize = 200,
+    maxStringSize = 5000,
     maxRemotes = 300,
     batchUIUpdates = true,
-    hookTimeout = 0.016,       -- ~1 frame
 }
 
 -- [[ CACHE TABLES ]] --
 local remoteClassCache = setmetatable({}, {__mode = "k"})
 local remoteIdCache = setmetatable({}, {__mode = "k"})
-local scriptSourceCache = {}
-local serializationCache = setmetatable({}, {__mode = "k"})
 local packetCache = nil
 local packetIDCache = nil
 local packetNameCache = nil
@@ -71,7 +68,6 @@ local packetNameCache = nil
 local game_GetService = game.GetService
 local game_HttpGet = game.HttpGet
 local Instance_new = Instance.new
-local workspace_CurrentCamera = workspace.CurrentCamera
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -81,7 +77,7 @@ local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local GuiInset = game:GetService("GuiService"):GetGuiInset()
 
--- [[ EXECUTOR COMPATIBILITY LAYER ]] --
+-- [[ EXECUTOR COMPATIBILITY ]] --
 local syn = syn or {}
 local isSynV3 = false
 if syn and syn.identifyexecutor then
@@ -106,7 +102,6 @@ local clonefunction = clonefunction or function(f) return f end
 local cloneref = cloneref or function(i) return i end
 local makewritable = makewritable or function(t) setreadonly(t, false) end
 local makereadonly = makereadonly or function(t) setreadonly(t, true) end
-local isreadonly = isreadonly or table.isfrozen
 local getrawmetatable = getrawmetatable or function(t) return nil end
 local hookmetamethod = hookmetamethod or function(obj, mm, func) 
     local mt = getrawmetatable(obj)
@@ -119,29 +114,7 @@ local hookmetamethod = hookmetamethod or function(obj, mm, func)
     end
 end
 
-local function safeHttpGet(url, timeout)
-    timeout = timeout or 10
-    local start = os.clock()
-    local result, err
-    local thread = coroutine_running()
-    
-    task_spawn(function()
-        local success, data = pcall(game_HttpGet, game, url)
-        result = data
-        err = not success and data or nil
-        if thread and coroutine_status(thread) ~= "dead" then
-            coroutine_resume(thread)
-        end
-    end)
-    
-    while not result and os.clock() - start < timeout do
-        task_wait(0.05)
-    end
-    
-    return result, err
-end
-
--- [[ OPTIMIZED UI FUNCTIONS ]] --
+-- [[ UI HELPERS ]] --
 local function createInstance(className, properties, children)
     local obj = Instance_new(className)
     for k, v in _pairs(properties or {}) do
@@ -157,6 +130,7 @@ end
 
 -- [[ OPTIMIZED TABLE UTILITIES ]] --
 local function shallowClone(t)
+    if _type(t) ~= "table" then return t end
     local result = {}
     for k, v in _pairs(t) do
         if _typeof(v) == "Instance" then
@@ -171,30 +145,19 @@ end
 local function safeDeepClone(t, depth)
     depth = depth or 0
     if depth > 10 then return t end
+    if _type(t) ~= "table" then return t end
     
-    if _type(t) == "table" then
-        local result = {}
-        for k, v in _pairs(t) do
-            if _type(v) == "table" then
-                result[k] = safeDeepClone(v, depth + 1)
-            elseif _typeof(v) == "Instance" then
-                result[k] = cloneref(v)
-            else
-                result[k] = v
-            end
+    local result = {}
+    for k, v in _pairs(t) do
+        if _type(v) == "table" then
+            result[k] = safeDeepClone(v, depth + 1)
+        elseif _typeof(v) == "Instance" then
+            result[k] = cloneref(v)
+        else
+            result[k] = v
         end
-        return result
     end
-    return t
-end
-
-local function isSimpleTable(t)
-    local count = 0
-    for _ in _pairs(t) do
-        count = count + 1
-        if count > 50 then return false end
-    end
-    return true
+    return result
 end
 
 -- [[ OPTIMIZED SERIALIZATION ]] --
@@ -230,7 +193,7 @@ local function serializeValue(v, depth)
     elseif t == "nil" then
         return "nil"
     elseif _typeof(v) == "Instance" then
-        return "game:GetService(\"" .. v.ClassName .. "\")" -- simplified
+        return "game:GetService(\"" .. v.ClassName .. "\")"
     elseif t == "table" then
         return serializeTable(v, depth + 1)
     else
@@ -266,10 +229,76 @@ local function serializeTable(t, depth)
     return result .. "}"
 end
 
--- [[ OPTIMIZED REMOTE HANDLER ]] --
+-- [[ UI REFERENCES ]] --
+local SimpleSpy3, Background, LeftPanel, LogList, RightPanel, CodeBox, ScrollingFrame, TopBar, Simple, CloseButton, TextLabel
+local UIListLayout, UIGridLayout
+local codebox = {}
+local logs = {}
+local remoteLogs = {}
+local blacklist = {}
+local blocklist = {}
+local layoutOrderNum = 999999999
+local selected = nil
 local logQueue = {}
 local uiUpdatePending = false
-local logCount = 0
+
+-- [[ SAFE CANVAS UPDATE ]] --
+local function updateRemoteCanvas()
+    if not LogList or not UIListLayout then return end
+    
+    -- Use pcall to safely get content size
+    local success, contentX, contentY = pcall(function()
+        local size = UIListLayout.AbsoluteContentSize
+        return size.X, size.Y
+    end)
+    
+    if success then
+        LogList.CanvasSize = UDim2.fromOffset(contentX or 0, contentY or 0)
+    else
+        -- Fallback: calculate manually
+        local totalHeight = 0
+        for _, child in _ipairs(LogList:GetChildren()) do
+            if child:IsA("Frame") and child.Visible then
+                totalHeight = totalHeight + child.Size.Y.Offset + 5
+            end
+        end
+        LogList.CanvasSize = UDim2.fromOffset(0, math_max(totalHeight, 232))
+    end
+end
+
+local function updateFunctionCanvas()
+    if not ScrollingFrame or not UIGridLayout then return end
+    
+    local success, contentX, contentY = pcall(function()
+        local size = UIGridLayout.AbsoluteContentSize
+        return size.X, size.Y
+    end)
+    
+    if success then
+        ScrollingFrame.CanvasSize = UDim2.fromOffset(contentX or 0, contentY or 0)
+    end
+end
+
+-- [[ REMOTE LOGGING ]] --
+local function getRemoteInfo(remote)
+    if not remoteClassCache[remote] then
+        if remote:IsA("RemoteEvent") then
+            remoteClassCache[remote] = "event"
+        elseif remote:IsA("RemoteFunction") then
+            remoteClassCache[remote] = "function"
+        elseif remote:IsA("UnreliableRemoteEvent") then
+            remoteClassCache[remote] = "unreliable"
+        else
+            remoteClassCache[remote] = "unknown"
+        end
+    end
+    
+    if not remoteIdCache[remote] then
+        remoteIdCache[remote] = game.GetDebugId(remote)
+    end
+    
+    return remoteClassCache[remote], remoteIdCache[remote]
+end
 
 local function processLogQueue()
     if #logQueue == 0 then 
@@ -299,7 +328,7 @@ end
 
 local function queueRemoteLog(data)
     if #logQueue > configs.maxRemotes * 2 then
-        return -- too many queued, drop
+        return
     end
     
     table_insert(logQueue, data)
@@ -308,34 +337,6 @@ local function queueRemoteLog(data)
         uiUpdatePending = true
         task_defer(processLogQueue)
     end
-end
-
--- [[ REMOTE LOGGING ]] --
-local logs = {}
-local remoteLogs = {}
-local blacklist = {}
-local blocklist = {}
-local layoutOrderNum = 999999999
-local selected = nil
-
-local function getRemoteInfo(remote)
-    if not remoteClassCache[remote] then
-        if remote:IsA("RemoteEvent") then
-            remoteClassCache[remote] = "event"
-        elseif remote:IsA("RemoteFunction") then
-            remoteClassCache[remote] = "function"
-        elseif remote:IsA("UnreliableRemoteEvent") then
-            remoteClassCache[remote] = "unreliable"
-        else
-            remoteClassCache[remote] = "unknown"
-        end
-    end
-    
-    if not remoteIdCache[remote] then
-        remoteIdCache[remote] = game.GetDebugId(remote)
-    end
-    
-    return remoteClassCache[remote], remoteIdCache[remote]
 end
 
 local function createRemoteLog(data)
@@ -435,25 +436,28 @@ end
 
 local function selectLog(logEntry)
     if selected and selected.Button then
-        TweenService:Create(selected.Button, TweenInfo.new(0.3), {BackgroundColor3 = Color3.new(0, 0, 0)}):Play()
+        pcall(function()
+            TweenService:Create(selected.Button, TweenInfo.new(0.3), {BackgroundColor3 = Color3.new(0, 0, 0)}):Play()
+        end)
     end
     
     selected = logEntry
     
     if selected and selected.Button then
-        TweenService:Create(selected.Button, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(92, 126, 229)}):Play()
+        pcall(function()
+            TweenService:Create(selected.Button, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(92, 126, 229)}):Play()
+        end)
     end
     
     if selected then
-        -- Generate script lazily
         if not selected.GenScript then
+            codebox:setRaw("-- Generating script...")
             task_defer(function()
                 selected.GenScript = generateScript(selected)
                 if selected == logEntry then
                     codebox:setRaw(selected.GenScript)
                 end
             end)
-            codebox:setRaw("-- Generating script...")
         else
             codebox:setRaw(selected.GenScript)
         end
@@ -463,9 +467,9 @@ end
 -- [[ SCRIPT GENERATION ]] --
 local function generateScript(logEntry)
     local remote = logEntry.Remote
-    local args = logEntry.Args
+    local args = logEntry.Args or {}
     
-    if not args or #args == 0 then
+    if #args == 0 then
         return "-- No arguments\n" .. getRemotePath(remote) .. (remote:IsA("RemoteEvent") and ":FireServer()" or ":InvokeServer()")
     end
     
@@ -485,7 +489,7 @@ local function getRemotePath(remote)
         current = current.Parent
     end
     
-    return "game." .. table_concat(path, ".")
+    return "game." .. table.concat(path, ".")
 end
 
 -- [[ HOOK FUNCTIONS ]] --
@@ -495,35 +499,40 @@ local isHooked = false
 local function createHookHandler()
     return newcclosure(function(...)
         local method = getnamecallmethod()
-        if not method then return originalNamecall and originalNamecall(...) end
+        if not method then 
+            if originalNamecall then return originalNamecall(...) end
+            return
+        end
         
         local remote = _select(1, ...)
         if _typeof(remote) ~= "Instance" then 
-            return originalNamecall and originalNamecall(...) 
+            if originalNamecall then return originalNamecall(...) end
+            return
         end
         
-        local lowerMethod = string_lower(method)
+        local lowerMethod = string.lower(method)
         if lowerMethod ~= "fireserver" and lowerMethod ~= "invokeserver" then
-            return originalNamecall and originalNamecall(...)
+            if originalNamecall then return originalNamecall(...) end
+            return
         end
         
         if not configs.logcheckcaller and checkcaller() then
-            return originalNamecall and originalNamecall(...)
+            if originalNamecall then return originalNamecall(...) end
+            return
         end
         
         local class, id = getRemoteInfo(remote)
         if blacklist[id] or blacklist[remote.Name] then
-            return originalNamecall and originalNamecall(...)
+            if originalNamecall then return originalNamecall(...) end
+            return
         end
         
-        -- Extract args (skip the remote itself)
         local argCount = _select("#", ...) - 1
         local args = {}
         for i = 1, argCount do
             args[i] = _select(i + 1, ...)
         end
         
-        -- Quick shallow clone for logging
         local logArgs = shallowClone(args)
         
         local data = {
@@ -541,10 +550,10 @@ local function createHookHandler()
         end
         
         if blocklist[id] or blocklist[remote.Name] then
-            return -- Blocked
+            return
         end
         
-        return originalNamecall and originalNamecall(...)
+        if originalNamecall then return originalNamecall(...) end
     end)
 end
 
@@ -634,7 +643,6 @@ local function setupHooks()
     end))
     
     hookfunction(unreliableRemote.FireServer, newcclosure(function(self, ...)
-        -- Same pattern for unreliable
         if not configs.logcheckcaller and checkcaller() then
             return originalUnreliableEvent(self, ...)
         end
@@ -696,112 +704,156 @@ local function disableHooks()
     isHooked = false
 end
 
--- [[ UI SETUP ]] --
-local SimpleSpy3 = createInstance("ScreenGui", {ResetOnSpawn = false})
-local Background = createInstance("Frame", {
-    Parent = SimpleSpy3,
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    BackgroundTransparency = 1,
-    Position = UDim2.new(0, 500, 0, 200),
-    Size = UDim2.new(0, 450, 0, 268)
-})
-
--- [[ REST OF UI CREATION ]] --
--- Simplified UI creation - only essential parts shown
-local LeftPanel = createInstance("Frame", {
-    Parent = Background,
-    BackgroundColor3 = Color3.fromRGB(53, 52, 55),
-    BorderSizePixel = 0,
-    Position = UDim2.new(0, 0, 0, 19),
-    Size = UDim2.new(0, 131, 0, 249)
-})
-
-local LogList = createInstance("ScrollingFrame", {
-    Parent = LeftPanel,
-    Active = true,
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    Position = UDim2.new(0, 0, 0, 9),
-    Size = UDim2.new(0, 131, 0, 232),
-    CanvasSize = UDim2.new(0, 0, 0, 0),
-    ScrollBarThickness = 4
-})
-
-createInstance("UIListLayout", {
-    Parent = LogList,
-    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-    SortOrder = Enum.SortOrder.LayoutOrder
-})
-
-local RightPanel = createInstance("Frame", {
-    Parent = Background,
-    BackgroundColor3 = Color3.fromRGB(37, 36, 38),
-    BorderSizePixel = 0,
-    Position = UDim2.new(0, 131, 0, 19),
-    Size = UDim2.new(0, 319, 0, 249)
-})
-
-local CodeBox = createInstance("Frame", {
-    Parent = RightPanel,
-    BackgroundColor3 = Color3.new(0.0823529, 0.0745098, 0.0784314),
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, 319, 0, 119)
-})
-
-local ScrollingFrame = createInstance("ScrollingFrame", {
-    Parent = RightPanel,
-    Active = true,
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    BackgroundTransparency = 1,
-    Position = UDim2.new(0, 0.5, 0),
-    Size = UDim2.new(1, 0, 0.5, -9),
-    CanvasSize = UDim2.new(0, 0, 0, 0),
-    ScrollBarThickness = 4
-})
-
-createInstance("UIGridLayout", {
-    Parent = ScrollingFrame,
-    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-    SortOrder = Enum.SortOrder.LayoutOrder,
-    CellPadding = UDim2.new(0, 0, 0, 0),
-    CellSize = UDim2.new(0, 94, 0, 27)
-})
-
--- Top bar
-local TopBar = createInstance("Frame", {
-    Parent = Background,
-    BackgroundColor3 = Color3.fromRGB(37, 35, 38),
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, 450, 0, 19)
-})
-
-local Simple = createInstance("TextButton", {
-    Parent = TopBar,
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    AutoButtonColor = false,
-    BackgroundTransparency = 1,
-    Position = UDim2.new(0, 5, 0, 0),
-    Size = UDim2.new(0, 57, 0, 18),
-    Font = Enum.Font.SourceSansBold,
-    Text = "SimpleSpy",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 14,
-    TextXAlignment = Enum.TextXAlignment.Left
-})
-
--- [[ OPTIMIZED FUNCTION BUTTONS ]] --
-local function updateFunctionCanvas()
-    local contentSize = UIGridLayout.AbsoluteContentSize
-    ScrollingFrame.CanvasSize = UDim2.fromOffset(contentSize.X, contentSize.Y)
+-- [[ UI CREATION ]] --
+function createUI()
+    SimpleSpy3 = createInstance("ScreenGui", {ResetOnSpawn = false})
+    
+    Background = createInstance("Frame", {
+        Parent = SimpleSpy3,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 500, 0, 200),
+        Size = UDim2.new(0, 450, 0, 268)
+    })
+    
+    LeftPanel = createInstance("Frame", {
+        Parent = Background,
+        BackgroundColor3 = Color3.fromRGB(53, 52, 55),
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 0, 0, 19),
+        Size = UDim2.new(0, 131, 0, 249)
+    })
+    
+    LogList = createInstance("ScrollingFrame", {
+        Parent = LeftPanel,
+        Active = true,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 0, 0, 9),
+        Size = UDim2.new(0, 131, 0, 232),
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 4
+    })
+    
+    UIListLayout = createInstance("UIListLayout", {
+        Parent = LogList,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder
+    })
+    
+    RightPanel = createInstance("Frame", {
+        Parent = Background,
+        BackgroundColor3 = Color3.fromRGB(37, 36, 38),
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 131, 0, 19),
+        Size = UDim2.new(0, 319, 0, 249)
+    })
+    
+    CodeBox = createInstance("Frame", {
+        Parent = RightPanel,
+        BackgroundColor3 = Color3.new(0.0823529, 0.0745098, 0.0784314),
+        BorderSizePixel = 0,
+        Size = UDim2.new(0, 319, 0, 119)
+    })
+    
+    -- Create a TextLabel inside CodeBox for displaying code
+    local codeLabel = createInstance("TextLabel", {
+        Parent = CodeBox,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 5),
+        Size = UDim2.new(1, -10, 1, -10),
+        Font = Enum.Font.Code,
+        Text = "",
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true,
+        TextScaled = false,
+        ClipsDescendants = true
+    })
+    
+    ScrollingFrame = createInstance("ScrollingFrame", {
+        Parent = RightPanel,
+        Active = true,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0.5, 0),
+        Size = UDim2.new(1, 0, 0.5, -9),
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 4
+    })
+    
+    UIGridLayout = createInstance("UIGridLayout", {
+        Parent = ScrollingFrame,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        CellPadding = UDim2.new(0, 0, 0, 0),
+        CellSize = UDim2.new(0, 94, 0, 27)
+    })
+    
+    TopBar = createInstance("Frame", {
+        Parent = Background,
+        BackgroundColor3 = Color3.fromRGB(37, 35, 38),
+        BorderSizePixel = 0,
+        Size = UDim2.new(0, 450, 0, 19)
+    })
+    
+    Simple = createInstance("TextButton", {
+        Parent = TopBar,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        AutoButtonColor = false,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 0),
+        Size = UDim2.new(0, 57, 0, 18),
+        Font = Enum.Font.SourceSansBold,
+        Text = "SimpleSpy",
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left
+    })
+    
+    CloseButton = createInstance("TextButton", {
+        Parent = TopBar,
+        BackgroundColor3 = Color3.new(0.145098, 0.141176, 0.14902),
+        BorderSizePixel = 0,
+        Position = UDim2.new(1, -19, 0, 0),
+        Size = UDim2.new(0, 19, 0, 19),
+        Font = Enum.Font.SourceSans,
+        Text = "X",
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 14
+    })
+    
+    TextLabel = createInstance("TextLabel", {
+        Parent = Background,
+        BackgroundColor3 = Color3.fromRGB(37, 35, 38),
+        Position = UDim2.new(0, 131, 1, -20),
+        Size = UDim2.new(0, 319, 0, 20),
+        Font = Enum.Font.SourceSans,
+        Text = "Ready",
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center
+    })
+    
+    codebox.setRaw = function(_, text)
+        codeLabel.Text = text or ""
+    end
+    
+    codebox.getString = function(_)
+        return codeLabel.Text or ""
+    end
+    
+    -- Set parent after creation
+    SimpleSpy3.Parent = (gethui and gethui()) or CoreGui
 end
 
-local function updateRemoteCanvas()
-    local contentSize = UIListLayout.AbsoluteContentSize
-    LogList.CanvasSize = UDim2.fromOffset(contentSize.X, contentSize.Y)
-end
-
-local function newButton(name, description, onClick)
+-- [[ FUNCTION BUTTONS ]] --
+local function createButton(name, description, onClick)
     local frame = createInstance("Frame", {
         Name = "FunctionTemplate",
         Parent = ScrollingFrame,
@@ -855,10 +907,11 @@ local function newButton(name, description, onClick)
         task_spawn(onClick)
     end)
     
-    updateFunctionCanvas()
+    -- Update canvas after a short delay to let UI render
+    task_delay(0.1, updateFunctionCanvas)
 end
 
--- [[ DECODE BYTENET (CACHED VERSION) ]] --
+-- [[ BYTENET DECODE ]] --
 local function getByteNetModules()
     if packetCache and packetIDCache and packetNameCache then
         return packetCache, packetIDCache, packetNameCache
@@ -871,8 +924,8 @@ local function getByteNetModules()
     if not success2 then return nil, nil, nil end
     
     local packetNames = {}
-    for name, obj in pairs(Packets) do
-        if type(obj) == "table" and obj.reader then
+    for name, obj in _pairs(Packets) do
+        if _type(obj) == "table" and obj.reader then
             packetNames[obj] = name
         end
     end
@@ -903,7 +956,7 @@ local function decodeByteNet()
     end
     
     local bufferArg = args[1]
-    if type(bufferArg) ~= "buffer" then
+    if _type(bufferArg) ~= "buffer" then
         TextLabel.Text = "First argument is not a buffer"
         return
     end
@@ -915,7 +968,7 @@ local function decodeByteNet()
     end
     
     local function decodeBuffer(buf)
-        if type(buf) ~= "buffer" then return nil, "Not a buffer" end
+        if _type(buf) ~= "buffer" then return nil, "Not a buffer" end
         
         local len = buffer.len(buf)
         if len < 2 then return nil, "Buffer too short" end
@@ -931,7 +984,7 @@ local function decodeByteNet()
         if not reader then return nil, "No reader for " .. name end
         
         local success, data = pcall(reader, buf, 2)
-        if not success then return nil, "Reader error: " .. tostring(data) end
+        if not success then return nil, "Reader error: " .. _tostring(data) end
         
         return {
             name = name,
@@ -948,7 +1001,6 @@ local function decodeByteNet()
         return
     end
     
-    -- Format output efficiently
     local display = string_format("--Decoded ByteNet Packet\nPacket: %s (ID: %d, Flag: %d, Size: %d bytes)\nData:\n",
         decoded.name, decoded.id, decoded.flag, decoded.size)
     
@@ -959,23 +1011,23 @@ local function decodeByteNet()
     TextLabel.Text = "Decoded!"
 end
 
--- [[ CREATE BUTTONS ]] --
+-- [[ SETUP ALL BUTTONS ]] --
 local function setupButtons()
-    newButton("Copy Code", "Copy code to clipboard", function()
+    createButton("Copy Code", "Copy code to clipboard", function()
         setclipboard(codebox:getString())
         TextLabel.Text = "Copied!"
     end)
     
-    newButton("Run Code", "Execute code", function()
+    createButton("Run Code", "Execute code", function()
         if selected then
             local remote = selected.Remote
             if remote then
                 pcall(function()
                     local args = selected.Args or {}
                     if remote:IsA("RemoteEvent") then
-                        remote:FireServer(unpack(args))
+                        remote:FireServer(_unpack(args))
                     elseif remote:IsA("RemoteFunction") then
-                        remote:InvokeServer(unpack(args))
+                        remote:InvokeServer(_unpack(args))
                     end
                     TextLabel.Text = "Executed!"
                 end)
@@ -983,8 +1035,8 @@ local function setupButtons()
         end
     end)
     
-    newButton("Clr Logs", "Clear logs", function()
-        for _, v in ipairs(logs) do
+    createButton("Clr Logs", "Clear logs", function()
+        for _, v in _ipairs(logs) do
             if v.Log and v.Log.Parent then
                 v.Log:Destroy()
             end
@@ -995,21 +1047,21 @@ local function setupButtons()
         TextLabel.Text = "Cleared!"
     end)
     
-    newButton("Exclude", "Exclude remote", function()
+    createButton("Exclude", "Exclude remote", function()
         if selected then
             blacklist[selected.Remote] = true
             TextLabel.Text = "Excluded!"
         end
     end)
     
-    newButton("Block", "Block remote", function()
+    createButton("Block", "Block remote", function()
         if selected then
             blocklist[selected.Remote] = true
             TextLabel.Text = "Blocked!"
         end
     end)
     
-    newButton("Decode ByteNet", "Decode ByteNet packet", decodeByteNet)
+    createButton("Decode ByteNet", "Decode ByteNet packet", decodeByteNet)
 end
 
 -- [[ MAIN INITIALIZATION ]] --
@@ -1019,22 +1071,13 @@ local function init()
             error("SimpleSpy cannot run on the server!")
         end
         
+        -- Create UI
+        createUI()
+        
         -- Setup hooks
         setupHooks()
         
-        -- Setup UI
-        SimpleSpy3.Parent = (gethui and gethui()) or CoreGui
-        
-        -- Setup codebox (simplified highlight)
-        codebox = {
-            setRaw = function(self, text)
-                CodeBox.Text = text
-            end,
-            getString = function(self)
-                return CodeBox.Text or ""
-            end
-        }
-        
+        -- Setup buttons
         setupButtons()
         
         -- Setup drag functionality
@@ -1080,10 +1123,11 @@ local function init()
         
         getgenv().SimpleSpyExecuted = true
         Simple.TextColor3 = Color3.fromRGB(0, 255, 0)
+        TextLabel.Text = "SimpleSpy Ready!"
         
     end, function(err)
         warn("SimpleSpy initialization error:", err)
-        SimpleSpy3:Destroy()
+        if SimpleSpy3 then SimpleSpy3:Destroy() end
     end)
 end
 
