@@ -1,5 +1,5 @@
 -- Credits for UI GoHamza, however I decided to revise it
-print("v2")
+print("v3")
 local lib = {}
 
 -- Referencing Services for faster lookups (old UI didn't do that)
@@ -506,30 +506,30 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		if window._Toggling then return end
 		window._Toggling = true
 
-		window._IsOpen = not window._IsOpen
+		window.Visible = not window.Visible
 	
-		if not window._IsOpen then
+		if window.Visible then
+			Main.Visible = true
+			Main.Position = UDim2.new(0.5, 0, 1.5, 0)
 			-- Hide: animate out, then set visible false
 			local Tween = TweenService:Create(
-			Main,
-			TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
-			{ Position = UDim2.new(0.5, 0, 2, 0) }
-		)
-		Tween:Play()
-		Tween.Completed:Connect(function()
-		Main.Visible = false
-		window._Toggling = false
-		end)
-	else
-		-- Show: set visible true, then animate in
-		Main.Visible = true
-		local Tween = TweenService:Create(
 			Main,
 			TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
 			{ Position = UDim2.new(0.5, 0, 0.5, 0) }
 		)
 		Tween:Play()
 		Tween.Completed:Connect(function()
+		window._Toggling = false
+		end)
+	else
+		local Tween = TweenService:Create(
+			Main,
+			TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
+			{ Position = UDim2.new(0.5, 0, 1.5, 0) }
+		)
+		Tween:Play()
+		Tween.Completed:Connect(function()
+		Main.Visible = false
 		window._Toggling = false
 		end)
 	end
@@ -825,7 +825,7 @@ end
 			Knob.Text = ""
 			AddCorner(Knob, UDim.new(5, 0))
 
-			local function UpdateSwitch(newMode)
+			local function UpdateSwitch(newMode, manualCall)
 				Mode = newMode
 				if Mode then
 					Knob:TweenPosition(UDim2.new(0, 35, 0, 1), "In", "Sine", 0.1, true)
@@ -834,17 +834,18 @@ end
 					Knob:TweenPosition(UDim2.new(0, 1, 0, 1), "In", "Sine", 0.1, true)
 					SwitchFrame.BackgroundColor3 = Color3.fromRGB(216, 216, 216)
 				end
-				if callback then callback(Mode) end
+				if callback and manualCall then
+					callback(Mode)
 			end
-
-			UpdateSwitch(Mode)
+		end
+			UpdateSwitch(Mode, false)
 
 			-- Both the frame and the knob can toggle
 			SwitchFrame.MouseButton1Click:Connect(function()
-				UpdateSwitch(not Mode)
+				UpdateSwitch(not Mode, true)
 			end)
 			Knob.MouseButton1Click:Connect(function()
-				UpdateSwitch(not Mode)
+				UpdateSwitch(not Mode, true)
 			end)
 		end
 
