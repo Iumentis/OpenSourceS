@@ -1,5 +1,5 @@
 -- Credits for UI GoHamza, however I decided to revise it
-print("v4")
+print("v5")
 local lib = {}
 
 -- Referencing Services for faster lookups (old UI didn't do that)
@@ -27,7 +27,6 @@ end
 
 -- Initialisation
 function lib:init(titleText, doSplah, toggleKey, deletePreview)
-	window.Visible = true
 	toggleKey = toggleKey or Enum.KeyCode.RightAlt
 	local window = {} -- The returned object
 	window._Toggling = false -- Preventing re‑entrancy during the animation
@@ -37,6 +36,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	window._Sections = {} -- All section buttons for selection
 	window._Workareas = {} -- All workarea frames
 	window._IsOpen = true
+	window._Visible = true -- FIXED: Added this line
 
 	-- Get the actual parent GUI (either CoreGui or gethui)
 	local ScreenGui
@@ -505,35 +505,35 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	-- Toggle visibility with animation
 	function window:ToggleVisible()
 		if window._Toggling then return end
-    window._Toggling = true
+		window._Toggling = true
 
-    window.Visible = not Main.Visible
+		window._Visible = not Main.Visible
 
-    if window.Visible then
-        Main.Visible = true
-        Main.Position = UDim2.new(0.5, 0, 1.5, 0)
-        local Tween = TweenService:Create(
-            Main,
-            TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
-            { Position = UDim2.new(0.5, 0, 0.5, 0) }
-        )
-        Tween:Play()
-        Tween.Completed:Connect(function()
-            window._Toggling = false
-        end)
-    else
-        local Tween = TweenService:Create(
-            Main,
-            TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
-            { Position = UDim2.new(0.5, 0, 1.5, 0) }
-        )
-        Tween:Play()
-        Tween.Completed:Connect(function()
-            Main.Visible = false
-            window._Toggling = false
-        end)
-    end
-end
+		if window._Visible then
+			Main.Visible = true
+			Main.Position = UDim2.new(0.5, 0, 1.5, 0)
+			local Tween = TweenService:Create(
+				Main,
+				TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
+				{ Position = UDim2.new(0.5, 0, 0.5, 0) }
+			)
+			Tween:Play()
+			Tween.Completed:Connect(function()
+				window._Toggling = false
+			end)
+		else
+			local Tween = TweenService:Create(
+				Main,
+				TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
+				{ Position = UDim2.new(0.5, 0, 1.5, 0) }
+			)
+			Tween:Play()
+			Tween.Completed:Connect(function()
+				Main.Visible = false
+				window._Toggling = false
+			end)
+		end
+	end
 
 	-- Temporary notification (appears in bottom‑right)
 	function window:TempNotify(text1, text2, icon)
@@ -836,8 +836,8 @@ end
 				end
 				if callback and manualCall then
 					callback(Mode)
+				end
 			end
-		end
 			UpdateSwitch(Mode, false)
 
 			-- Both the frame and the knob can toggle
@@ -900,9 +900,9 @@ end
 		return Section
 	end
 
-		Minimize.MouseButton1Click:Connect(function()
-			window:ToggleVisible()
-		end)
+	Minimize.MouseButton1Click:Connect(function()
+		window:ToggleVisible()
+	end)
 	if toggleKey then
 		UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if not gameProcessed and input.KeyCode == toggleKey then
