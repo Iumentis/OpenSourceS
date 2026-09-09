@@ -1,8 +1,6 @@
--- Credits for UI GoHamza, however I decided to revise it
-print("v8")
+print("v9")
 local lib = {}
 
--- Referencing Services for faster lookups (old UI didn't do that)
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -11,7 +9,6 @@ local CoreGui = game:GetService("CoreGui")
 local Player = game:GetService("Players").LocalPlayer
 local Mouse = Player:GetMouse()
 
--- Helper functions to reduce duplicate code (GoHamza had a lot of repetition)
 local function AddCorner(instance, radius)
 	local UICorner = Instance.new("UICorner")
 	UICorner.CornerRadius = radius or UDim.new(0, 9)
@@ -25,20 +22,65 @@ local function AddStroke(instance, color, thickness)
 	UIStroke.Parent = instance
 end
 
--- Initialisation
+local LightTheme = {
+	MainBG = Color3.fromRGB(255, 255, 255),
+	MainTransparency = 0.15,
+	WorkareaBG = Color3.fromRGB(255, 255, 255),
+	SearchBG = Color3.fromRGB(255, 255, 255),
+	TitleText = Color3.fromRGB(0, 0, 0),
+	DividerText = Color3.fromRGB(95, 95, 95),
+	LabelText = Color3.fromRGB(95, 95, 95),
+	ButtonText = Color3.fromRGB(21, 103, 251),
+	SectionButtonText = Color3.fromRGB(0, 0, 0),
+	SectionButtonSelectedText = Color3.fromRGB(255, 255, 255),
+	SwitchOffBG = Color3.fromRGB(216, 216, 216),
+	InputFrameBG = Color3.fromRGB(240, 240, 240),
+	TextBoxText = Color3.fromRGB(12, 12, 12),
+	TextBoxPlaceholder = Color3.fromRGB(113, 113, 113),
+	NotificationBG = Color3.fromRGB(255, 255, 255),
+	NotificationTitleText = Color3.fromRGB(95, 95, 95),
+	NotificationText = Color3.fromRGB(95, 95, 95),
+	TempNotifBG = Color3.fromRGB(255, 255, 255),
+}
+
+local DarkTheme = {
+	MainBG = Color3.fromRGB(30, 30, 30),
+	MainTransparency = 0.1,
+	WorkareaBG = Color3.fromRGB(40, 40, 40),
+	SearchBG = Color3.fromRGB(40, 40, 40),
+	TitleText = Color3.fromRGB(255, 255, 255),
+	DividerText = Color3.fromRGB(180, 180, 180),
+	LabelText = Color3.fromRGB(180, 180, 180),
+	ButtonText = Color3.fromRGB(80, 160, 255),
+	SectionButtonText = Color3.fromRGB(255, 255, 255),
+	SectionButtonSelectedText = Color3.fromRGB(255, 255, 255),
+	SwitchOffBG = Color3.fromRGB(80, 80, 80),
+	InputFrameBG = Color3.fromRGB(60, 60, 60),
+	TextBoxText = Color3.fromRGB(220, 220, 220),
+	TextBoxPlaceholder = Color3.fromRGB(150, 150, 150),
+	NotificationBG = Color3.fromRGB(40, 40, 40),
+	NotificationTitleText = Color3.fromRGB(180, 180, 180),
+	NotificationText = Color3.fromRGB(180, 180, 180),
+	TempNotifBG = Color3.fromRGB(40, 40, 40),
+}
+
 function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	toggleKey = toggleKey or Enum.KeyCode.RightAlt
-	local window = {} -- The returned object
-	window._Toggling = false -- Preventing re‑entrancy during the animation
-	window._GreenConnection = nil -- Stores the green button callback
-	window._Notification1 = nil -- Stores notification button connections
+	local window = {}
+	window._Toggling = false
+	window._GreenConnection = nil
+	window._Notification1 = nil
 	window._Notification2 = nil
-	window._Sections = {} -- All section buttons for selection
-	window._Workareas = {} -- All workarea frames
+	window._Sections = {}
+	window._Workareas = {}
 	window._IsOpen = true
 	window._Visible = true
+	window._ToggleKey = toggleKey
+	window._DarkMode = false
+	window._ChangingKey = false
 
-	-- Get the actual parent GUI (either CoreGui or gethui)
+	local currentTheme = LightTheme
+
 	local ScreenGui
 	local ParentGui
 	if syn then
@@ -53,7 +95,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		ScreenGui = Instance.new("ScreenGui")
 	end
 
-	-- If there's more than 1 Apple GUI Instance, delete the old one
 	if deletePreview and ParentGui:FindFirstChild("ScreenGui") then
 		local OldMain = ParentGui.ScreenGui:FindFirstChild("Main")
 		if OldMain then
@@ -69,7 +110,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 
 	ScreenGui.Parent = ParentGui
 
-	-- Splash screen (kept because it looks nice)
 	if doSplah then
 		local Splash = Instance.new("Frame")
 		Splash.Name = "Splash"
@@ -136,8 +176,8 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Main.Name = "Main"
 	Main.Parent = ScreenGui
 	Main.AnchorPoint = Vector2.new(0.5, 0.5)
-	Main.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	Main.BackgroundTransparency = 0.150
+	Main.BackgroundColor3 = currentTheme.MainBG
+	Main.BackgroundTransparency = currentTheme.MainTransparency
 	Main.Position = UDim2.new(0.5, 0, 2, 0)
 	Main.Size = UDim2.new(0, 721, 0, 584)
 	AddCorner(Main, UDim.new(0, 18))
@@ -186,7 +226,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	local Workarea = Instance.new("Frame")
 	Workarea.Name = "Workarea"
 	Workarea.Parent = Main
-	Workarea.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Workarea.BackgroundColor3 = currentTheme.WorkareaBG
 	Workarea.Position = UDim2.new(0.36403501, 0, 0, 0)
 	Workarea.Size = UDim2.new(0, 458, 0, 584)
 	Workarea.Interactable = true
@@ -196,14 +236,14 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	local WorkareaCornerHider = Instance.new("Frame")
 	WorkareaCornerHider.Name = "WorkareaCornerHider"
 	WorkareaCornerHider.Parent = Workarea
-	WorkareaCornerHider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	WorkareaCornerHider.BackgroundColor3 = currentTheme.WorkareaBG
 	WorkareaCornerHider.BorderSizePixel = 0
 	WorkareaCornerHider.Size = UDim2.new(0, 18, 0.99895674, 0)
 
 	local Search = Instance.new("Frame")
 	Search.Name = "Search"
 	Search.Parent = Main
-	Search.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Search.BackgroundColor3 = currentTheme.SearchBG
 	Search.Position = UDim2.new(0.0256588068, 0, 0.0958904102, 0)
 	Search.Size = UDim2.new(0, 225, 0, 34)
 	AddCorner(Search, UDim.new(0, 9))
@@ -229,7 +269,8 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	SearchTextBox.LineHeight = 0.870
 	SearchTextBox.PlaceholderText = "Search"
 	SearchTextBox.Text = ""
-	SearchTextBox.TextColor3 = Color3.fromRGB(95, 95, 95)
+	SearchTextBox.TextColor3 = currentTheme.TitleText
+	SearchTextBox.PlaceholderColor3 = currentTheme.TextBoxPlaceholder
 	SearchTextBox.TextSize = 22
 	SearchTextBox.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -304,7 +345,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Minimize.Text = ""
 	AddCorner(Minimize, UDim.new(1, 0))
 
-	-- Title text
 	local Title = Instance.new("TextLabel")
 	Title.Name = "Title"
 	Title.Parent = Main
@@ -314,18 +354,17 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Title.Size = UDim2.new(0, 400, 0, 15)
 	Title.Font = Enum.Font.Gotham
 	Title.LineHeight = 1.180
-	Title.TextColor3 = Color3.fromRGB(0, 0, 0)
+	Title.TextColor3 = currentTheme.TitleText
 	Title.TextSize = 28
 	Title.TextWrapped = true
 	Title.TextXAlignment = Enum.TextXAlignment.Left
 	Title.Text = titleText or ""
 
-	-- Notification 1 (single button)
 	local Notification1 = Instance.new("Frame")
 	Notification1.Name = "Notification1"
 	Notification1.Parent = Main
 	Notification1.AnchorPoint = Vector2.new(0.5, 0.5)
-	Notification1.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Notification1.BackgroundColor3 = currentTheme.NotificationBG
 	Notification1.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Notification1.Size = UDim2.new(0, 304, 0, 362)
 	Notification1.Visible = false
@@ -340,7 +379,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification1Icon.Size = UDim2.new(0, 100, 0, 100)
 	Notification1Icon.ZIndex = 3
 	Notification1Icon.Image = "rbxassetid://4871684504"
-	Notification1Icon.ImageColor3 = Color3.fromRGB(95, 95, 95)
+	Notification1Icon.ImageColor3 = currentTheme.DividerText
 
 	local Notification1Button = Instance.new("TextButton")
 	Notification1Button.Name = "Notification1Button"
@@ -385,7 +424,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification1Title.ZIndex = 3
 	Notification1Title.Font = Enum.Font.GothamMedium
 	Notification1Title.Text = "Notice"
-	Notification1Title.TextColor3 = Color3.fromRGB(95, 95, 95)
+	Notification1Title.TextColor3 = currentTheme.NotificationTitleText
 	Notification1Title.TextSize = 28
 
 	local Notification1Text = Instance.new("TextLabel")
@@ -397,16 +436,16 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification1Text.ZIndex = 3
 	Notification1Text.Font = Enum.Font.Gotham
 	Notification1Text.Text = "We would like to contact you regarding your car's extended warranty."
-	Notification1Text.TextColor3 = Color3.fromRGB(95, 95, 95)
+	Notification1Text.TextColor3 = currentTheme.NotificationText
 	Notification1Text.TextSize = 16
 	Notification1Text.TextWrapped = true
 
-	-- Notification 2 (two buttons)
+
 	local Notification2 = Instance.new("Frame")
 	Notification2.Name = "Notification2"
 	Notification2.Parent = Main
 	Notification2.AnchorPoint = Vector2.new(0.5, 0.5)
-	Notification2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Notification2.BackgroundColor3 = currentTheme.NotificationBG
 	Notification2.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Notification2.Size = UDim2.new(0, 304, 0, 362)
 	Notification2.Visible = false
@@ -421,7 +460,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification2Icon.Size = UDim2.new(0, 100, 0, 100)
 	Notification2Icon.ZIndex = 3
 	Notification2Icon.Image = "rbxassetid://12608260095"
-	Notification2Icon.ImageColor3 = Color3.fromRGB(95, 95, 95)
+	Notification2Icon.ImageColor3 = currentTheme.DividerText
 
 	local Notification2Title = Instance.new("TextLabel")
 	Notification2Title.Name = "Notification2Title"
@@ -432,7 +471,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification2Title.ZIndex = 3
 	Notification2Title.Font = Enum.Font.GothamMedium
 	Notification2Title.Text = "Notice"
-	Notification2Title.TextColor3 = Color3.fromRGB(95, 95, 95)
+	Notification2Title.TextColor3 = currentTheme.NotificationTitleText
 	Notification2Title.TextSize = 28
 
 	local Notification2Text = Instance.new("TextLabel")
@@ -444,7 +483,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification2Text.ZIndex = 3
 	Notification2Text.Font = Enum.Font.Gotham
 	Notification2Text.Text = "We would like to contact you regarding your car's extended warranty."
-	Notification2Text.TextColor3 = Color3.fromRGB(95, 95, 95)
+	Notification2Text.TextColor3 = currentTheme.NotificationText
 	Notification2Text.TextSize = 16
 	Notification2Text.TextWrapped = true
 
@@ -491,7 +530,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Notification2Button2.ZIndex = 3
 	Notification2Button2.Font = Enum.Font.Gotham
 	Notification2Button2.Text = "Go away."
-	Notification2Button2.TextColor3 = Color3.fromRGB(95, 95, 95)
+	Notification2Button2.TextColor3 = currentTheme.NotificationText
 	Notification2Button2.TextSize = 21
 	AddCorner(Notification2Button2, UDim.new(0, 9))
 
@@ -501,14 +540,41 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		{ Position = UDim2.new(0.5, 0, 0.5, 0) }
 	):Play()
 
+	local function ApplyTheme(darkMode)
+		currentTheme = darkMode and DarkTheme or LightTheme
+		window._DarkMode = darkMode
 
-	-- Toggle visibility with animation
+		Main.BackgroundColor3 = currentTheme.MainBG
+		Main.BackgroundTransparency = currentTheme.MainTransparency
+		Workarea.BackgroundColor3 = currentTheme.WorkareaBG
+		WorkareaCornerHider.BackgroundColor3 = currentTheme.WorkareaBG
+		Search.BackgroundColor3 = currentTheme.SearchBG
+		Title.TextColor3 = currentTheme.TitleText
+		SearchTextBox.TextColor3 = currentTheme.TitleText
+		SearchTextBox.PlaceholderColor3 = currentTheme.TextBoxPlaceholder
+
+		-- Update existing section buttons
+		for _, btn in ipairs(window._Sections) do
+			if btn.BackgroundTransparency == 0 then -- selected
+				btn.TextColor3 = currentTheme.SectionButtonSelectedText
+			else
+				btn.TextColor3 = currentTheme.SectionButtonText
+			end
+		end
+
+		Notification1.BackgroundColor3 = currentTheme.NotificationBG
+		Notification1Title.TextColor3 = currentTheme.NotificationTitleText
+		Notification1Text.TextColor3 = currentTheme.NotificationText
+		Notification2.BackgroundColor3 = currentTheme.NotificationBG
+		Notification2Title.TextColor3 = currentTheme.NotificationTitleText
+		Notification2Text.TextColor3 = currentTheme.NotificationText
+		Notification2Button2.TextColor3 = currentTheme.NotificationText
+	end
+
 	function window:ToggleVisible()
 		if window._Toggling then return end
 		window._Toggling = true
-
 		window._Visible = not Main.Visible
-
 		if window._Visible then
 			Main.Visible = true
 			Main.Position = UDim2.new(0.5, 0, 1.5, 0)
@@ -535,20 +601,17 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		end
 	end
 
-	-- Temporary notification (appears in bottom‑right)
 	function window:TempNotify(text1, text2, icon)
-		-- Shift existing temp notifications upward
 		for _, v in ipairs(ScreenGui:GetChildren()) do
 			if v.Name == "TempNotif" then
 				v.Position = v.Position + UDim2.new(0, 0, 0, -130)
 			end
 		end
-
 		local TempNotif = Instance.new("Frame")
 		TempNotif.Name = "TempNotif"
 		TempNotif.Parent = ScreenGui
 		TempNotif.AnchorPoint = Vector2.new(0.5, 0.5)
-		TempNotif.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		TempNotif.BackgroundColor3 = currentTheme.TempNotifBG
 		TempNotif.BackgroundTransparency = 0.150
 		TempNotif.Position = UDim2.new(1, -250, 0.0794737339, 0)
 		TempNotif.Size = UDim2.new(0, 447, 0, 117)
@@ -556,6 +619,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		TempNotif.ZIndex = 4
 		AddCorner(TempNotif, UDim.new(0, 18))
 
+		-- (create TempText2, TempText1, TempIcon, TempShadow with theme colors)
 		local TempText2 = Instance.new("TextLabel")
 		TempText2.Name = "TempText2"
 		TempText2.Parent = TempNotif
@@ -565,7 +629,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		TempText2.ZIndex = 4
 		TempText2.Font = Enum.Font.Gotham
 		TempText2.Text = text2
-		TempText2.TextColor3 = Color3.fromRGB(95, 95, 95)
+		TempText2.TextColor3 = currentTheme.DividerText
 		TempText2.TextSize = 16
 		TempText2.TextWrapped = true
 		TempText2.TextXAlignment = Enum.TextXAlignment.Left
@@ -580,7 +644,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		TempText1.ZIndex = 4
 		TempText1.Font = Enum.Font.GothamMedium
 		TempText1.Text = text1
-		TempText1.TextColor3 = Color3.fromRGB(95, 95, 95)
+		TempText1.TextColor3 = currentTheme.DividerText
 		TempText1.TextSize = 28
 		TempText1.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -592,7 +656,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		TempIcon.Size = UDim2.new(0, 71, 0, 71)
 		TempIcon.ZIndex = 4
 		TempIcon.Image = icon or "rbxassetid://12608259004"
-		TempIcon.ImageColor3 = Color3.fromRGB(95, 95, 95)
+		TempIcon.ImageColor3 = currentTheme.DividerText
 		TempIcon.ScaleType = Enum.ScaleType.Fit
 
 		local TempShadow = Instance.new("ImageLabel")
@@ -611,9 +675,12 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		Debris:AddItem(TempNotif, 5)
 	end
 
-	-- Single‑button notification
 	function window:Notify(txt1, txt2, btnText, icon, callback)
 		if Notification1.Visible or Notification2.Visible then return "Already visible" end
+		Notification1.BackgroundColor3 = currentTheme.NotificationBG
+		Notification1Title.TextColor3 = currentTheme.NotificationTitleText
+		Notification1Text.TextColor3 = currentTheme.NotificationText
+		Notification1Icon.ImageColor3 = currentTheme.DividerText
 		Notification1Title.Text = txt1 or "Notice"
 		Notification1Text.Text = txt2 or ""
 		Notification1Icon.Image = icon or "rbxassetid://4871684504"
@@ -629,39 +696,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		end)
 	end
 
-	-- Two‑button notification
-	function window:Notify2(txt1, txt2, btn1, btn2, icon, callback1, callback2)
-		if Notification1.Visible or Notification2.Visible then return "Already visible" end
-		Notification2Title.Text = txt1 or "Notice"
-		Notification2Text.Text = txt2 or ""
-		Notification2Icon.Image = icon or "rbxassetid://12608260095"
-		Notification2Button1.Text = btn1 or "Sure!"
-		Notification2Button2.Text = btn2 or "Go away."
-		Notification2.Visible = true
 
-		if window._Notification1 then window._Notification1:Disconnect() end
-		if window._Notification2 then window._Notification2:Disconnect() end
-
-		window._Notification1 = Notification2Button1.MouseButton1Click:Connect(function()
-			window._Notification1:Disconnect()
-			window._Notification2:Disconnect()
-			window._Notification1 = nil
-			window._Notification2 = nil
-			Notification2.Visible = false
-			if callback1 then callback1() end
-		end)
-
-		window._Notification2 = Notification2Button2.MouseButton1Click:Connect(function()
-			window._Notification1:Disconnect()
-			window._Notification2:Disconnect()
-			window._Notification1 = nil
-			window._Notification2 = nil
-			Notification2.Visible = false
-			if callback2 then callback2() end
-		end)
-	end
-
-	-- Divider in the sidebar
 	function window:Divider(name)
 		local SidebarDivider = Instance.new("TextLabel")
 		SidebarDivider.Name = "SidebarDivider"
@@ -671,14 +706,14 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		SidebarDivider.Size = UDim2.new(0, 226, 0, 26)
 		SidebarDivider.Font = Enum.Font.Gotham
 		SidebarDivider.Text = name or ""
-		SidebarDivider.TextColor3 = Color3.fromRGB(95, 95, 95)
+		SidebarDivider.TextColor3 = currentTheme.DividerText
 		SidebarDivider.TextSize = 21
 		SidebarDivider.TextWrapped = true
 		SidebarDivider.TextXAlignment = Enum.TextXAlignment.Left
 		SidebarDivider.TextYAlignment = Enum.TextYAlignment.Bottom
 	end
 
-	-- Create a new section (returns a table with its own methods)
+	-- Create a new section
 	function window:Section(name)
 		local SectionButton = Instance.new("TextButton")
 		SectionButton.Name = "SectionButton"
@@ -690,13 +725,12 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		SectionButton.AutoButtonColor = false
 		SectionButton.Font = Enum.Font.Gotham
 		SectionButton.Text = name or "Section"
-		SectionButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		SectionButton.TextColor3 = currentTheme.SectionButtonText
 		SectionButton.TextSize = 21
 		AddCorner(SectionButton, UDim.new(0, 9))
 
 		table.insert(window._Sections, SectionButton)
 
-		-- Workarea frame for this section
 		local WorkareaMain = Instance.new("ScrollingFrame")
 		WorkareaMain.Name = "WorkareaMain"
 		WorkareaMain.Parent = Workarea
@@ -718,19 +752,15 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 
 		table.insert(window._Workareas, WorkareaMain)
 
-		-- Section object to be returned
 		local Section = {}
 
 		function Section:Select()
-			-- Deselect all other sections
 			for _, Button in ipairs(window._Sections) do
 				Button.BackgroundTransparency = 1
-				Button.TextColor3 = Color3.fromRGB(0, 0, 0)
+				Button.TextColor3 = currentTheme.SectionButtonText
 			end
 			SectionButton.BackgroundTransparency = 0
-			SectionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-			-- Hide all workareas except this one
+			SectionButton.TextColor3 = currentTheme.SectionButtonSelectedText
 			for _, Area in ipairs(window._Workareas) do
 				Area.Visible = false
 			end
@@ -747,7 +777,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			Label.Font = Enum.Font.Gotham
 			Label.LineHeight = 1.180
 			Label.Text = name or ""
-			Label.TextColor3 = Color3.fromRGB(0, 0, 0)
+			Label.TextColor3 = currentTheme.DividerText
 			Label.TextSize = 25
 			Label.TextWrapped = true
 			Label.TextXAlignment = Enum.TextXAlignment.Left
@@ -763,10 +793,10 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			Button.ZIndex = 2
 			Button.Font = Enum.Font.Gotham
 			Button.Text = name or ""
-			Button.TextColor3 = Color3.fromRGB(21, 103, 251)
+			Button.TextColor3 = currentTheme.ButtonText
 			Button.TextSize = 21
 			AddCorner(Button, UDim.new(0, 9))
-			AddStroke(Button, Color3.fromRGB(21, 103, 251), 1)
+			AddStroke(Button, currentTheme.ButtonText, 1)
 
 			if callback then
 				Button.MouseButton1Click:Connect(function()
@@ -788,7 +818,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			Label.BorderSizePixel = 2
 			Label.Size = UDim2.new(0, 418, 0, 37)
 			Label.Font = Enum.Font.Gotham
-			Label.TextColor3 = Color3.fromRGB(95, 95, 95)
+			Label.TextColor3 = currentTheme.LabelText
 			Label.TextSize = 21
 			Label.TextWrapped = true
 			Label.Text = name or ""
@@ -804,7 +834,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			Wrapper.Size = UDim2.new(0, 418, 0, 37)
 			Wrapper.Font = Enum.Font.Gotham
 			Wrapper.Text = name or ""
-			Wrapper.TextColor3 = Color3.fromRGB(95, 95, 95)
+			Wrapper.TextColor3 = currentTheme.LabelText
 			Wrapper.TextSize = 21
 			Wrapper.TextWrapped = true
 			Wrapper.TextXAlignment = Enum.TextXAlignment.Left
@@ -832,7 +862,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 					SwitchFrame.BackgroundColor3 = Color3.fromRGB(21, 103, 251)
 				else
 					Knob:TweenPosition(UDim2.new(0, 1, 0, 1), "In", "Sine", 0.1, true)
-					SwitchFrame.BackgroundColor3 = Color3.fromRGB(216, 216, 216)
+					SwitchFrame.BackgroundColor3 = currentTheme.SwitchOffBG
 				end
 				if callback and manualCall then
 					callback(Mode)
@@ -840,7 +870,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			end
 			UpdateSwitch(Mode, false)
 
-			-- Both the frame and the knob can toggle
 			SwitchFrame.MouseButton1Click:Connect(function()
 				UpdateSwitch(not Mode, true)
 			end)
@@ -857,14 +886,14 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			Wrapper.Size = UDim2.new(0, 418, 0, 37)
 			Wrapper.Font = Enum.Font.Gotham
 			Wrapper.Text = name or ""
-			Wrapper.TextColor3 = Color3.fromRGB(95, 95, 95)
+			Wrapper.TextColor3 = currentTheme.LabelText
 			Wrapper.TextSize = 21
 			Wrapper.TextWrapped = true
 			Wrapper.TextXAlignment = Enum.TextXAlignment.Left
 
 			local InputFrame = Instance.new("Frame")
 			InputFrame.Parent = Wrapper
-			InputFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+			InputFrame.BackgroundColor3 = currentTheme.InputFrameBG
 			InputFrame.Position = UDim2.new(0.441926777, 0, 0.0270270277, 0)
 			InputFrame.Size = UDim2.new(0, 233, 0, 34)
 			AddCorner(InputFrame, UDim.new(0, 9))
@@ -879,10 +908,10 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			TextBox.ClearTextOnFocus = false
 			TextBox.Font = Enum.Font.Gotham
 			TextBox.LineHeight = 0.870
-			TextBox.PlaceholderColor3 = Color3.fromRGB(113, 113, 113)
+			TextBox.PlaceholderColor3 = currentTheme.TextBoxPlaceholder
 			TextBox.PlaceholderText = placeholder or "Type..."
 			TextBox.Text = ""
-			TextBox.TextColor3 = Color3.fromRGB(12, 12, 12)
+			TextBox.TextColor3 = currentTheme.TextBoxText
 			TextBox.TextSize = 21
 			TextBox.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -903,14 +932,37 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Minimize.MouseButton1Click:Connect(function()
 		window:ToggleVisible()
 	end)
-	if toggleKey then
-		UserInputService.InputBegan:Connect(function(input)
-			if input.KeyCode == toggleKey then
-				window:ToggleVisible()
-				 print("Key pressed:", input.KeyCode)
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if window._ChangingKey then
+			if input.UserInputType == Enum.UserInputType.Keyboard then
+				window._ToggleKey = input.KeyCode
+				window._ChangingKey = false
+				window:TempNotify("Success", "Toggle key set to " .. tostring(input.KeyCode), nil)
 			end
+			return
+		end
+		if input.KeyCode == window._ToggleKey then
+			window:ToggleVisible()
+		end
+	end)
+
+	task.defer(function()
+		local settingsSection = window:Section("Settings")
+
+		settingsSection:Switch("Dark Mode", false, function(state)
+			ApplyTheme(state)
 		end)
-	end
+
+		settingsSection:Button("Change Toggle Key", function()
+			window._ChangingKey = true
+			window:Notify("Change Key", "Press any key to set as the new toggle key.", "Cancel", nil, function()
+				window._ChangingKey = false
+			end)
+		end)
+	end)
+
+	ApplyTheme(false)
 
 	return window
 end
