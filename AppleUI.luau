@@ -1,4 +1,4 @@
-print("v9.1")
+print("v9.2")
 local lib = {}
 
 local TweenService = game:GetService("TweenService")
@@ -748,7 +748,11 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		WorkareaLayout.Parent = WorkareaMain
 		WorkareaLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		WorkareaLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		WorkareaLayout.Padding = UDim.new(0, 5)
+		WorkareaLayout.Padding = UDim.new(0, 8)
+
+		local UIPadding = Instance.new("UIPadding")
+		UIPadding.Parent = WorkareaMain
+		UIPadding.PaddingTop = UDim(0, 5)
 
 		table.insert(window._Workareas, WorkareaMain)
 
