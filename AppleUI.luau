@@ -1,5 +1,5 @@
 -- Credits for UI GoHamza, however I decided to revise it
-print("v7")
+print("v8")
 local lib = {}
 
 -- Referencing Services for faster lookups (old UI didn't do that)
@@ -907,6 +907,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		UserInputService.InputBegan:Connect(function(input)
 			if input.KeyCode == toggleKey then
 				window:ToggleVisible()
+				 print("Key pressed:", input.KeyCode)
 			end
 		end)
 	end
