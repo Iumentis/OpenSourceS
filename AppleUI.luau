@@ -1,4 +1,4 @@
-print("v9")
+print("v9.1")
 local lib = {}
 
 local TweenService = game:GetService("TweenService")
@@ -796,7 +796,12 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			Button.TextColor3 = currentTheme.ButtonText
 			Button.TextSize = 21
 			AddCorner(Button, UDim.new(0, 9))
-			AddStroke(Button, currentTheme.ButtonText, 1)
+
+			local UIStroke = Instance.new("UIStroke")
+			UIStroke.Color = currentTheme.ButtonText
+			UIStroke.Thickness = 2
+			UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+			UIStroke.Parent = Button
 
 			if callback then
 				Button.MouseButton1Click:Connect(function()
