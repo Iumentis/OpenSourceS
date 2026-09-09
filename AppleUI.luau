@@ -139,14 +139,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Main.Position = UDim2.new(0.5, 0, 2, 0)
 	Main.Size = UDim2.new(0, 721, 0, 584)
 	AddCorner(Main, UDim.new(0, 18))
-
-	Main.MouseEnter:Connect(function()
-	Mouse.Icon = "rbxasset://textures/Cursors/Arrow.png"
-	end)
-
-	Main.MouseLeave:Connect(function()
-	Mouse.Icon = "rbxasset://textures/Cursors/Arrow.png"
-	end)
+	Main.Active = false
 
 	local Dragging = false
 	local DragInput = nil
