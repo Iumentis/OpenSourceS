@@ -187,6 +187,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Workarea.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	Workarea.Position = UDim2.new(0.36403501, 0, 0, 0)
 	Workarea.Size = UDim2.new(0, 458, 0, 584)
+	Workarea.Interactable = false
 	AddCorner(Workarea, UDim.new(0, 18))
 
 	local WorkareaCornerHider = Instance.new("Frame")
@@ -244,6 +245,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Sidebar.AutomaticCanvasSize = "Y"
 	Sidebar.CanvasSize = UDim2.new(0, 0, 0, 0)
 	Sidebar.ScrollBarThickness = 2
+	Sidebar.Interactable = false
 
 	local SidebarLayout = Instance.new("UIListLayout")
 	SidebarLayout.Parent = Sidebar
