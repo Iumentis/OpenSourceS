@@ -8,6 +8,8 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local CoreGui = game:GetService("CoreGui")
+local Player = game:GetService("Players").LocalPlayer
+local Mouse = Player:GetMouse()
 
 -- Helper functions to reduce duplicate code (GoHamza had a lot of repetition)
 local function AddCorner(instance, radius)
@@ -25,6 +27,7 @@ end
 
 -- Initialisation
 function lib:init(titleText, doSplah, toggleKey, deletePreview)
+	toggleKey = toggleKey or Enum.KeyCode.RightAlt
 	local window = {} -- The returned object
 	window._Toggling = false -- Preventing re‑entrancy during the animation
 	window._GreenConnection = nil -- Stores the green button callback
@@ -136,6 +139,14 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Main.Position = UDim2.new(0.5, 0, 2, 0)
 	Main.Size = UDim2.new(0, 721, 0, 584)
 	AddCorner(Main, UDim.new(0, 18))
+
+	Main.MouseEnter:Connect(function()
+	Mouse.Icon = "rbxasset://textures/Cursors/Arrow.png"
+	end)
+
+	Main.MouseLeave:Connect(function()
+	Mouse.Icon = "rbxasset://textures/Cursors/Arrow.png"
+	end)
 
 	local Dragging = false
 	local DragInput = nil
@@ -293,15 +304,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	Minimize.AutoButtonColor = false
 	Minimize.Text = ""
 	AddCorner(Minimize, UDim.new(1, 0))
-
-	local Resize = Instance.new("TextButton")
-	Resize.Name = "Resize"
-	Resize.Parent = Buttons
-	Resize.BackgroundColor3 = Color3.fromRGB(39, 200, 63)
-	Resize.Size = UDim2.new(0, 16, 0, 16)
-	Resize.AutoButtonColor = false
-	Resize.Text = ""
-	AddCorner(Resize, UDim.new(1, 0))
 
 	-- Title text
 	local Title = Instance.new("TextLabel")
@@ -517,16 +519,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		Tween:Play()
 		Tween.Completed:Wait()
 		window._Toggling = false
-	end
-
-	-- Green button callback
-	function window:GreenButton(callback)
-		if window._GreenConnection then
-			window._GreenConnection:Disconnect()
-		end
-		window._GreenConnection = Resize.MouseButton1Click:Connect(function()
-			if callback then callback() end
-		end)
 	end
 
 	-- Temporary notification (appears in bottom‑right)
