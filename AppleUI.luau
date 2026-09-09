@@ -36,7 +36,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	window._Sections = {} -- All section buttons for selection
 	window._Workareas = {} -- All workarea frames
 	window._IsOpen = true
-	window._Visible = true -- FIXED: Added this line
+	window._Visible = true
 
 	-- Get the actual parent GUI (either CoreGui or gethui)
 	local ScreenGui
