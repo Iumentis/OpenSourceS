@@ -505,18 +505,33 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		if window._Toggling then return end
 		window._Toggling = true
 
-		local Visible = (Main.Position.Y.Scale == 0.5) -- simple state check
-		local TargetPos = Visible and UDim2.new(0.5, 0, 2, 0) or UDim2.new(0.5, 0, 0.5, 0)
-
-		local Tween = TweenService:Create(
+		-- Track visibility state properly
+		local IsVisible = (Main.Visible == true)
+	
+		if IsVisible then
+			-- Hide: animate out, then set visible false
+			local Tween = TweenService:Create(
 			Main,
 			TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
-			{ Position = TargetPos }
+			{ Position = UDim2.new(0.5, 0, 2, 0) }
 		)
 		Tween:Play()
 		Tween.Completed:Wait()
-		window._Toggling = false
+		Main.Visible = false
+	else
+		-- Show: set visible true, then animate in
+		Main.Visible = true
+		local Tween = TweenService:Create(
+			Main,
+			TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
+			{ Position = UDim2.new(0.5, 0, 0.5, 0) }
+		)
+		Tween:Play()
+		Tween.Completed:Wait()
 	end
+	
+	window._Toggling = false
+end
 
 	-- Temporary notification (appears in bottom‑right)
 	function window:TempNotify(text1, text2, icon)
@@ -683,7 +698,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		local WorkareaMain = Instance.new("ScrollingFrame")
 		WorkareaMain.Name = "WorkareaMain"
 		WorkareaMain.Parent = Workarea
-		WorkareaMain.Active = true
 		WorkareaMain.BackgroundTransparency = 1
 		WorkareaMain.BorderSizePixel = 0
 		WorkareaMain.Position = UDim2.new(0.0393013097, 0, 0.0958904102, 0)
@@ -692,6 +706,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		WorkareaMain.CanvasSize = UDim2.new(0, 0, 0, 0)
 		WorkareaMain.ScrollBarThickness = 2
 		WorkareaMain.Visible = false
+		WorkareaMain.Active = false
 
 		local WorkareaLayout = Instance.new("UIListLayout")
 		WorkareaLayout.Parent = WorkareaMain
