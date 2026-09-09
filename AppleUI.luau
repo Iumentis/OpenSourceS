@@ -1,5 +1,5 @@
 -- Credits for UI GoHamza, however I decided to revise it
-print("v1")
+print("v2")
 local lib = {}
 
 -- Referencing Services for faster lookups (old UI didn't do that)
@@ -35,6 +35,7 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 	window._Notification2 = nil
 	window._Sections = {} -- All section buttons for selection
 	window._Workareas = {} -- All workarea frames
+	window._IsOpen = true
 
 	-- Get the actual parent GUI (either CoreGui or gethui)
 	local ScreenGui
@@ -505,10 +506,9 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		if window._Toggling then return end
 		window._Toggling = true
 
-		-- Track visibility state properly
-		local IsVisible = (Main.Visible == true)
+		window._IsOpen = not window._IsOpen
 	
-		if IsVisible then
+		if not window._IsOpen then
 			-- Hide: animate out, then set visible false
 			local Tween = TweenService:Create(
 			Main,
@@ -516,8 +516,10 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			{ Position = UDim2.new(0.5, 0, 2, 0) }
 		)
 		Tween:Play()
-		Tween.Completed:Wait()
+		Tween.Completed:Connect(function()
 		Main.Visible = false
+		window._Toggling = false
+		end)
 	else
 		-- Show: set visible true, then animate in
 		Main.Visible = true
@@ -527,10 +529,10 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			{ Position = UDim2.new(0.5, 0, 0.5, 0) }
 		)
 		Tween:Play()
-		Tween.Completed:Wait()
+		Tween.Completed:Connect(function()
+		window._Toggling = false
+		end)
 	end
-	
-	window._Toggling = false
 end
 
 	-- Temporary notification (appears in bottom‑right)
