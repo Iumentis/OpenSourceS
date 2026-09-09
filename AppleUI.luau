@@ -904,9 +904,8 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 		window:ToggleVisible()
 	end)
 	if toggleKey then
-		UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		UserInputService.InputBegan:Connect(function(input)
 			if input.KeyCode == toggleKey then
-				print("Key:", input.KeyCode, "GameProcessed:", gameProcessed)
 				window:ToggleVisible()
 			end
 		end)
