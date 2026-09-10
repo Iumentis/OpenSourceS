@@ -1,4 +1,4 @@
-print("v9.2")
+print("v9.3")
 local lib = {}
 
 local TweenService = game:GetService("TweenService")
@@ -64,7 +64,8 @@ local DarkTheme = {
 	TempNotifBG = Color3.fromRGB(40, 40, 40),
 }
 
-function lib:init(titleText, doSplah, toggleKey, deletePreview)
+function lib:init(titleText, doSplah, toggleKey, deletePreview, ignoreGameProcessed)
+	ignoreGameProcessed = ignoreGameProcessed or false
 	toggleKey = toggleKey or Enum.KeyCode.RightAlt
 	local window = {}
 	window._Toggling = false
@@ -951,6 +952,12 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview)
 			end
 			return
 		end
+			
+		local isTyping = UserInputService:GetFocusedTextBox() ~= nil
+		if gameProcessed and not (ignoreGameProcessed and not isTyping) then
+			return
+		end
+
 		if input.KeyCode == window._ToggleKey then
 			window:ToggleVisible()
 		end
