@@ -753,7 +753,6 @@ function lib:init(titleText, doSplah, toggleKey, deletePreview, ignoreGameProces
 
 		local UIPadding = Instance.new("UIPadding")
 		UIPadding.Parent = WorkareaMain
-		UIPadding.PaddingTop = UDim(0, 5)
 
 		table.insert(window._Workareas, WorkareaMain)
 
